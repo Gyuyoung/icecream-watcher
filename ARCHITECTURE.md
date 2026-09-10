@@ -1,6 +1,6 @@
 # icecc-top — Architecture (Phase 1: Research)
 
-Status: **Phase 1 research complete; Phase 2 implemented** (see §8).
+Status: **Phase 1 research complete; Phases 2 and 3 implemented** (see §8).
 Decisions approved 2026-09-10: **Rust + ratatui/crossterm/tokio**, **Tier 0+1** collection (§4, §5).
 Target: a btop-class TUI for monitoring an Icecream (icecc) distributed compile cluster.
 
@@ -421,19 +421,25 @@ IceccTop/
 │   │   ├── src/discover.rs       explicit target, env, UDP broadcast discovery
 │   │   ├── src/conn.rs           connection task, reconnect, record/replay
 │   │   └── tests/golden.rs       decodes bytes captured from a real scheduler
-│   ├── icecc-model/              Cluster, Node, job accounting
+│   ├── icecc-metrics/            node metrics wire format + HTTP client
+│   │   ├── src/lib.rs            Snapshot and friends; units in field names
+│   │   └── src/client.rs         one GET, no HTTP stack pulled in
+│   ├── icecc-model/              Cluster, Node, job accounting, agent metrics
 │   │                             (history ring buffers: planned, Phase 4)
-│   ├── icecc-agent/              (planned, Phase 3) icecc-top-agent:
-│   │   └── src/collect/            cpu.rs mem.rs thermal.rs net.rs disk.rs
+│   ├── icecc-agent/              icecc-top-agent
+│   │   ├── src/parse.rs          pure /proc and /sys parsers
+│   │   ├── src/sampler.rs        sampling, deltas, sensor selection
+│   │   └── src/server.rs         single-endpoint HTTP/1.1
 │   └── icecc-top/                the TUI binary
 │       ├── src/main.rs           CLI, runtime wiring, terminal setup
 │       ├── src/app.rs            state, key handling (sort modes: planned)
+│       ├── src/collect.rs        parallel agent polling
 │       └── src/ui.rs             rendering (splits into ui/ at Phase 4)
 └── contrib/
     ├── capture/                  protocol captures + format docs
     │   ├── README.md
     │   └── lab-session.ictpcap   golden-test fixture from a live scheduler
-    └── systemd/                  (planned, Phase 3) agent unit files
+    └── systemd/                  hardened agent unit + deployment notes
 ```
 
 The planned `docs/protocol.md` was **dropped**: §2 of this document is already
@@ -541,6 +547,64 @@ describes.
 70+ tests, `cargo clippy --all-targets` clean.
 
 ---
+
+## 8b. Phase 3 — node resource monitoring — **done**
+
+`icecc-top-agent` samples `/proc` and `/sys` once a second and serves the last
+snapshot over one `GET /metrics`; `icecc-top` polls every node at the address the
+scheduler reported for it. Nothing is configured per node.
+
+Implemented: CPU total and per-core utilisation, per-core frequency, memory
+total/available/free/buffers/cached, swap, load average (with per-core
+normalisation), CPU package temperature plus every other sensor, uptime, and
+network throughput per interface. Disk I/O is still deferred — §3 listed it as
+optional and nothing in the target UX needs it yet.
+
+Decisions worth recording:
+
+* **Units live in field names** (`total_kib`, `rx_bytes_per_sec`, `celsius`).
+  The `FreeMem` trap in §9 is exactly what happens when they do not.
+* **Unknown is never zero.** The first sample produces no snapshot at all,
+  because rates need a delta and a snapshot of zeroes would render a busy node
+  as idle; two samples inside the same millisecond are refused for the same
+  reason. A node with no temperature sensor reports `None`, not 0 °C.
+* **Sensor choice is explicit and attributed.** Hosts disagree between sensors —
+  on the development machine `coretemp/Package id 0` read 87 °C, `thinkpad/CPU`
+  89 °C, `acpitz` 88 °C and `x86_pkg_temp` 100 °C — so the agent picks by a
+  documented preference order (`coretemp`/`k10temp`/`zenpower`/`cpu_thermal`
+  package first, then the kernel package sensor, then ACPI) and reports *which*
+  sensor it used. Readings of exactly 0 are dropped as "not fitted", the
+  convention `thinkpad_acpi` uses, and sensors exposed through both hwmon and a
+  thermal zone are reported once.
+* **HTTP, not a private protocol.** It costs a little size and buys
+  `curl node:9765/metrics` when a node misbehaves. The server is hand-rolled
+  (one endpoint, `Connection: close`, read to EOF) so no HTTP stack is pulled
+  into either binary.
+* **Serialise once per sample, not per request**, so N monitors cost the same as
+  one.
+* **Three failure states, not one.** "No agent" (a rollout gap) is distinct from
+  "agent error" (something answered but was unusable) and from "stale" (it
+  answered before and has gone quiet). Only the last two are faults. A failed
+  poll keeps the last known values so a row shows history rather than going
+  blank, and the header carries coverage as `agents 1/2`.
+* **Host identity is checked.** The agent reports its own hostname and every
+  local address; a mismatch against the scheduler's name marks the row
+  `[wrong host?]` rather than quietly graphing another machine's CPU.
+* **Metrics are dropped on reconnect** along with everything else derived: host
+  ids are assigned by the scheduler, and a new session can hand the same id to a
+  different machine.
+
+### What was verified, and how
+
+| Claim | Evidence |
+|---|---|
+| the parsers read real files correctly | fixtures captured verbatim from this machine; totals cross-checked against `free -m` (64004 MiB), `nproc` (12), `/proc/loadavg` (exact match) and `coretemp` (82 °C) |
+| the agent works end to end | `curl` returns a snapshot; `/healthz` returns `ok`; an unknown path returns 404 pointing at `/metrics` |
+| a hung node cannot stall the poll loop | a listener that accepts and never answers is bounded by the per-node timeout, while a healthy agent on another port keeps being served |
+| a node with no agent degrades gracefully | live two-node cluster: the macOS node reported `Connection refused` and rendered as `—` with `agents 1/2`, while the Linux node showed 12 % CPU, 47 % memory, 78 °C |
+| 120 nodes are polled inside one interval | collector test with 120 targets against a local agent |
+| the agent is deployable | `x86_64-unknown-linux-musl` build is a 2.0 MB static-pie binary with no dynamic dependencies; the systemd unit passes `systemd-analyze verify` |
+| neither disturbs the machine | 30 s attached to the live cluster: agent **0.7 % CPU, 3.7 MiB RSS**; monitor **0.0 % CPU, 4.3 MiB RSS** |
 
 ## 9. Open questions for Phase 2+
 

@@ -9,4 +9,5 @@ repository.workspace = true
 
 [dependencies]
 icecc-proto = { workspace = true }
+icecc-metrics = { workspace = true }
 tracing = { workspace = true }

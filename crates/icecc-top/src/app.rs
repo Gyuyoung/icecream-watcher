@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use icecc_model::Cluster;
+use icecc_model::{Cluster, ResourceResult};
 use icecc_proto::Update;
 
 /// How often the screen may repaint. Events can burst — a login replay of 100
@@ -48,6 +48,12 @@ impl App {
             self.last_event = Some(Instant::now());
         }
         self.cluster.apply(update);
+        self.dirty = true;
+    }
+
+    /// Apply one agent poll result.
+    pub fn apply_resource(&mut self, host_id: u32, result: ResourceResult) {
+        self.cluster.apply_resource(host_id, result);
         self.dirty = true;
     }
 

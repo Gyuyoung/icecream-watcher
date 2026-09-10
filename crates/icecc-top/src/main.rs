@@ -4,6 +4,7 @@
 //! why per-node CPU/memory needs an agent rather than the scheduler.
 
 mod app;
+mod collect;
 mod ui;
 
 use std::io;
@@ -19,6 +20,7 @@ use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use tokio::sync::mpsc;
+use tokio::sync::watch;
 
 use crate::app::{classify, App, FRAME_INTERVAL};
 
@@ -61,6 +63,27 @@ struct Cli {
     /// possible.
     #[arg(long, requires = "replay")]
     replay_realtime: bool,
+
+    /// Port each node's `icecc-top-agent` listens on.
+    #[arg(long, value_name = "PORT", default_value_t = icecc_metrics::DEFAULT_AGENT_PORT)]
+    agent_port: u16,
+
+    /// How often to poll node agents.
+    #[arg(long, value_name = "MS", default_value_t = 1000)]
+    poll_interval: u64,
+
+    /// Per-node deadline for an agent poll. Kept below the interval so a round
+    /// of slow nodes still finishes before the next one starts.
+    #[arg(long, value_name = "MS", default_value_t = 750)]
+    poll_timeout: u64,
+
+    /// Treat agent metrics older than this as stale.
+    #[arg(long, value_name = "MS", default_value_t = 5000)]
+    stale_after: u64,
+
+    /// Do not poll node agents at all; show scheduler data only.
+    #[arg(long)]
+    no_agents: bool,
 
     /// Print events as text instead of drawing a TUI. Useful for checking a
     /// cluster over ssh, or in CI.
@@ -105,18 +128,38 @@ fn main() -> io::Result<()> {
         };
 
         let rx = conn::spawn(source, opts);
+
+        // The collector is optional, so a cluster with no agents deployed pays
+        // nothing for the feature.
+        let collector = (!cli.no_agents).then(|| {
+            collect::spawn(collect::Options {
+                port: cli.agent_port,
+                interval: Duration::from_millis(cli.poll_interval.max(100)),
+                timeout: Duration::from_millis(cli.poll_timeout.max(50)),
+                ..collect::Options::default()
+            })
+        });
+
+        let stale_after = Duration::from_millis(cli.stale_after);
         if cli.dump {
-            run_dump(rx).await
+            run_dump(rx, collector, stale_after).await
         } else {
-            run_tui(rx).await
+            run_tui(rx, collector, stale_after).await
         }
     })
 }
 
 /// Text mode: echo every update. No terminal state to restore, so this is also
 /// the safe way to debug the protocol.
-async fn run_dump(mut rx: mpsc::Receiver<conn::Update>) -> io::Result<()> {
+async fn run_dump(
+    mut rx: mpsc::Receiver<conn::Update>,
+    collector: Option<Collector>,
+    stale_after: Duration,
+) -> io::Result<()> {
     let mut app = App::new();
+    app.cluster.metrics_stale_after = stale_after;
+    let (targets_tx, mut samples) = split(collector);
+
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
@@ -124,21 +167,92 @@ async fn run_dump(mut rx: mpsc::Receiver<conn::Update>) -> io::Result<()> {
                 let Some(update) = update else { break };
                 println!("{update:?}");
                 app.apply(update);
+                publish_targets(&app, targets_tx.as_ref());
+            }
+            sample = recv_sample(&mut samples) => {
+                if let Some(sample) = sample {
+                    println!("Resource {{ host_id: {}, result: {:?} }}", sample.host_id, sample.result);
+                    app.apply_resource(sample.host_id, sample.result);
+                }
             }
         }
     }
+
     let s = app.cluster.summary();
     println!(
-        "\n{} nodes online ({} offline), slots {}/{}, {} active / {} pending jobs",
-        s.nodes_online, s.nodes_offline, s.used_slots, s.total_slots, s.active_jobs, s.pending_jobs
+        "\n{} nodes online ({} offline), slots {}/{}, {} active / {} pending jobs, \
+         agents {}/{} ({} stale, {} missing)",
+        s.nodes_online,
+        s.nodes_offline,
+        s.used_slots,
+        s.total_slots,
+        s.active_jobs,
+        s.pending_jobs,
+        s.nodes_with_metrics,
+        s.nodes_online,
+        s.nodes_metrics_stale,
+        s.nodes_without_agent
     );
     Ok(())
 }
 
-async fn run_tui(mut rx: mpsc::Receiver<conn::Update>) -> io::Result<()> {
+type Collector = (
+    watch::Sender<collect::Targets>,
+    mpsc::Receiver<collect::Sample>,
+);
+
+fn split(
+    collector: Option<Collector>,
+) -> (
+    Option<watch::Sender<collect::Targets>>,
+    Option<mpsc::Receiver<collect::Sample>>,
+) {
+    match collector {
+        Some((tx, rx)) => (Some(tx), Some(rx)),
+        None => (None, None),
+    }
+}
+
+/// Await the next sample, or never, when agent polling is switched off.
+///
+/// `select!` needs a future for every branch, and a branch that can never fire
+/// is how the same loop serves both modes.
+async fn recv_sample(
+    samples: &mut Option<mpsc::Receiver<collect::Sample>>,
+) -> Option<collect::Sample> {
+    match samples {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
+/// Tell the collector which nodes to poll, whenever the scheduler's view
+/// changes. Sent only on an actual change, so a busy cluster does not wake the
+/// collector on every job event.
+fn publish_targets(app: &App, targets: Option<&watch::Sender<collect::Targets>>) {
+    let Some(targets) = targets else { return };
+    let mut next = app.cluster.poll_targets();
+    next.sort();
+    targets.send_if_modified(|current| {
+        if *current == next {
+            false
+        } else {
+            *current = next;
+            true
+        }
+    });
+}
+
+async fn run_tui(
+    mut rx: mpsc::Receiver<conn::Update>,
+    collector: Option<Collector>,
+    stale_after: Duration,
+) -> io::Result<()> {
     let mut terminal = setup_terminal()?;
     let mut keys = spawn_input_reader();
     let mut app = App::new();
+    app.cluster.metrics_stale_after = stale_after;
+    let (targets_tx, mut samples) = split(collector);
     let mut ticker = tokio::time::interval(FRAME_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -153,11 +267,19 @@ async fn run_tui(mut rx: mpsc::Receiver<conn::Update>) -> io::Result<()> {
                 }
             }
             update = rx.recv() => match update {
-                Some(update) => app.apply(update),
+                Some(update) => {
+                    app.apply(update);
+                    publish_targets(&app, targets_tx.as_ref());
+                }
                 // The connection task retries forever, so this only happens if
                 // it panicked; without it we would spin on a closed channel.
                 None => break Ok(()),
             },
+            sample = recv_sample(&mut samples) => {
+                if let Some(sample) = sample {
+                    app.apply_resource(sample.host_id, sample.result);
+                }
+            }
             key = keys.recv() => match key {
                 Some(InputEvent::Key(code, mods)) => {
                     app.on_key(classify(code, mods));

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/icecc-proto", "crates/icecc-model", "crates/icecc-top"]
+members = [
+    "crates/icecc-proto",
+    "crates/icecc-metrics",
+    "crates/icecc-model",
+    "crates/icecc-agent",
+    "crates/icecc-top",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +17,7 @@ repository = "https://github.com/gyuyoung/IceccTop"
 
 [workspace.dependencies]
 icecc-proto = { path = "crates/icecc-proto" }
+icecc-metrics = { path = "crates/icecc-metrics" }
 icecc-model = { path = "crates/icecc-model" }
 tokio = { version = "1", default-features = false }
 tracing = "0.1"
