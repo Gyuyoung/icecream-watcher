@@ -1,0 +1,12 @@
+[package]
+name = "icecc-model"
+description = "Cluster state and job accounting for icecc-top"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+icecc-proto = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "icecc-proto"
+description = "Icecream (icecc) scheduler monitor protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["net", "io-util", "time", "rt", "macros", "sync", "fs"] }
+tracing = { workspace = true }
+socket2 = "0.5"
+if-addrs = "0.13"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

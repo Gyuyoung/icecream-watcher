@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = ["crates/icecc-proto", "crates/icecc-model", "crates/icecc-top"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/gyuyoung/IceccTop"
+
+[workspace.dependencies]
+icecc-proto = { path = "crates/icecc-proto" }
+icecc-model = { path = "crates/icecc-model" }
+tokio = { version = "1", default-features = false }
+tracing = "0.1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
