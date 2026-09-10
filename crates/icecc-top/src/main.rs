@@ -270,6 +270,9 @@ async fn run_tui(
                     if let Err(e) = terminal.draw(|f| ui::draw(f, &app, &mut ui)) {
                         break Err(e);
                     }
+                    // Only the renderer knows the viewport, so the scroll offset
+                    // is clamped after the fact rather than guessed beforehand.
+                    app.clamp_detail_scroll(ui.detail_max_scroll);
                 }
             }
             _ = history.tick() => app.tick_history(),

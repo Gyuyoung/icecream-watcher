@@ -102,6 +102,39 @@ pub fn temp_ramp(celsius: f32) -> Color {
     }
 }
 
+/// Human-readable byte rate, for network throughput.
+pub fn rate(bytes_per_sec: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "K", "M", "G"];
+    let mut value = bytes_per_sec as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{value:.0}{}/s", UNITS[unit])
+    } else {
+        format!("{value:.1}{}/s", UNITS[unit])
+    }
+}
+
+/// Human-readable size from kibibytes, which is the unit `/proc/meminfo` uses.
+pub fn size_kib(kib: u64) -> String {
+    const UNITS: [&str; 4] = ["KiB", "MiB", "GiB", "TiB"];
+    let mut value = kib as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    // Whole kibibytes need no decimal; anything larger reads better with one.
+    if unit == 0 {
+        format!("{value:.0} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
 /// `HH:MM:SS` for an uptime or connection duration.
 pub fn duration(secs: u64) -> String {
     let h = secs / 3600;
@@ -229,6 +262,24 @@ mod tests {
         assert_eq!(temp_ramp(70.0), Color::Gray);
         assert_eq!(temp_ramp(85.0), Color::Yellow);
         assert_eq!(temp_ramp(95.0), Color::LightRed);
+    }
+
+    #[test]
+    fn byte_rates_are_readable() {
+        assert_eq!(rate(0), "0B/s");
+        assert_eq!(rate(999), "999B/s");
+        assert_eq!(rate(1024), "1.0K/s");
+        assert_eq!(rate(1_200_000), "1.1M/s");
+        assert_eq!(rate(5_368_709_120), "5.0G/s");
+    }
+
+    #[test]
+    fn sizes_come_from_kibibytes_because_meminfo_does() {
+        assert_eq!(size_kib(0), "0 KiB");
+        assert_eq!(size_kib(512), "512 KiB");
+        assert_eq!(size_kib(1024), "1.0 MiB");
+        // The development machine's 65540720 KiB of RAM.
+        assert_eq!(size_kib(65_540_720), "62.5 GiB");
     }
 
     #[test]

@@ -25,6 +25,7 @@
 //! A value we do not have renders as `—`, never as zero: an idle node and an
 //! unmeasured node must not look the same.
 
+mod detail;
 mod widgets;
 
 use icecc_model::{Bottleneck, Cluster, ConnectionState, Node, ResourceState, Summary, Trend};
@@ -37,12 +38,17 @@ use ratatui::Frame;
 use crate::app::App;
 
 /// Shown when a metric is not available. Distinct from `0`.
-const UNKNOWN: &str = "—";
+pub(crate) const UNKNOWN: &str = "—";
 
 /// Persistent widget state, so scrolling and selection survive between frames.
 #[derive(Default)]
 pub struct Ui {
     table: TableState,
+    /// How far the detail view could be scrolled at the last paint. Recorded
+    /// here because only rendering knows the viewport size, and the caller uses
+    /// it to clamp the stored offset — without that, holding a scroll key past
+    /// the end means pressing back the same number of times to return.
+    pub detail_max_scroll: u16,
 }
 
 pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
@@ -63,10 +69,23 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
     .split(area);
 
     frame.render_widget(Paragraph::new(header_line(app, &summary)), areas[0]);
-    if band_height > 0 {
-        cluster_band(frame, areas[1], cluster, &summary);
+
+    match app.detail_node() {
+        // The detail view takes the band's space as well as the table's: it has
+        // per-core bars to show, and the cluster summary is one Esc away.
+        Some(node) => {
+            let body = areas[1].union(areas[2]);
+            ui.detail_max_scroll = detail::max_scroll(node, cluster, body);
+            detail::draw(frame, body, node, cluster, app.detail_scroll);
+        }
+        None => {
+            if band_height > 0 {
+                cluster_band(frame, areas[1], cluster, &summary);
+            }
+            node_table(frame, areas[2], app, ui);
+        }
     }
-    node_table(frame, areas[2], app, ui);
+
     frame.render_widget(Paragraph::new(footer_line(app, &summary)), areas[3]);
 
     if app.show_help {
@@ -571,7 +590,7 @@ fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
 
 /// Shorten to `max` cells, marking the cut so a truncated name cannot be
 /// mistaken for a shorter one.
-fn elide(text: &str, max: usize) -> String {
+pub(crate) fn elide(text: &str, max: usize) -> String {
     let len = text.chars().count();
     if len <= max {
         return text.to_owned();
@@ -710,12 +729,32 @@ fn dim<'a>(text: String) -> Line<'a> {
 fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
     let dim = Style::default().add_modifier(Modifier::DIM);
     let key = Style::default().fg(Color::Cyan);
+    let _ = summary;
+
+    // Offer only the keys that do something in the current view; advertising
+    // a sort key that the detail view ignores would be a small lie.
+    if let Some(node) = app.detail_node() {
+        return Line::from(vec![
+            Span::styled("Esc", key),
+            Span::styled(" back  ", dim),
+            Span::styled("↑↓/jk", key),
+            Span::styled(" scroll  ", dim),
+            Span::styled("q", key),
+            Span::styled(" quit", dim),
+            Span::styled(
+                format!("   {}", node.name()),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]);
+    }
 
     let mut spans = vec![
         Span::styled("q", key),
         Span::styled(" quit  ", dim),
         Span::styled("↑↓/jk", key),
         Span::styled(" select  ", dim),
+        Span::styled("Enter", key),
+        Span::styled(" detail  ", dim),
         Span::styled("s", key),
         Span::styled(" sort  ", dim),
         Span::styled("c m l i", key),
@@ -730,7 +769,6 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
             Style::default().fg(Color::Cyan),
         ));
     }
-    let _ = summary;
     Line::from(spans)
 }
 
@@ -746,8 +784,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  ↑ / k        move up"),
         Line::from("  ↓ / j        move down"),
         Line::from("  PgUp / PgDn  move ten rows"),
-        Line::from("  Enter        node detail  (Phase 5)"),
-        Line::from("  Esc          close this, or quit"),
+        Line::from("  Enter        open or close the node detail view"),
+        Line::from("  Esc          close this, leave the detail view, or quit"),
         Line::from("  r            redraw"),
         Line::from("  s            cycle sort"),
         Line::from("  c / m / l / i  sort by cpu / mem / load / jobs"),
@@ -1320,5 +1358,288 @@ mod tests {
         app.move_selection(1);
 
         println!("{}", render(&app, 118, 20));
+
+        // …and the detail view for the node the overview points at.
+        app.on_key(crate::app::Key::Enter);
+        println!("\n--- detail ---\n{}", render(&app, 118, 26));
+    }
+
+    // ---- Phase 5: the detail view ----
+
+    fn detail_of(app: &mut App, name: &str) -> String {
+        // Select the named node, then open its detail view.
+        loop {
+            app.move_selection(1);
+            let picked = app
+                .selected
+                .and_then(|id| app.cluster.nodes.get(&id))
+                .map(|n| n.name().to_owned());
+            match picked {
+                Some(n) if n == name => break,
+                Some(_) => {}
+                None => panic!("no node named {name}"),
+            }
+            if app.selected_index() == Some(app.sorted_nodes().len() - 1) {
+                panic!("no node named {name}");
+            }
+        }
+        app.on_key(crate::app::Key::Enter);
+        render(app, 118, 30)
+    }
+
+    /// The detail view's full text, independent of how much fits on screen.
+    fn detail_text(app: &App) -> String {
+        let node = app.detail_node().expect("detail view open");
+        detail::lines(node, &app.cluster, 116)
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn enter_opens_the_detail_view_for_the_selected_node() {
+        let mut app = busy_cluster();
+        let out = detail_of(&mut app, "build01");
+        assert!(app.detail);
+        // Identity the overview drops on purpose.
+        assert!(out.contains("build01"), "{out}");
+        assert!(out.contains("10.0.0.1"), "{out}");
+        // And the table is gone while it is open.
+        assert!(!out.contains("build02"), "{out}");
+    }
+
+    #[test]
+    fn the_detail_view_shows_what_the_overview_left_out() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        let out = detail_text(&app);
+        for section in ["CPU", "MEMORY", "ICECREAM", "NETWORK", "SENSORS", "AGENT"] {
+            assert!(out.contains(section), "missing {section}:\n{out}");
+        }
+        // Per-core bars, one entry per core.
+        assert!(out.contains("C0 "), "{out}");
+        assert!(out.contains("C7 "), "{out}");
+        assert!(out.contains("load average"), "{out}");
+        assert!(out.contains("swap"), "{out}");
+        assert!(out.contains("uptime"), "{out}");
+        assert!(out.contains("jobs in"), "{out}");
+        assert!(out.contains("jobs out"), "{out}");
+    }
+
+    #[test]
+    fn the_temperature_names_the_sensor_it_came_from() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        let out = detail_text(&app);
+        assert!(
+            out.contains("coretemp/Package id 0"),
+            "an unattributed temperature is not evidence:\n{out}"
+        );
+    }
+
+    #[test]
+    fn scrolling_reveals_the_sections_below_the_first_screen() {
+        let mut app = busy_cluster();
+        let first_screen = detail_of(&mut app, "build01");
+        // Tall content on a short terminal: the later sections start off-screen.
+        assert!(!first_screen.contains("AGENT"), "{first_screen}");
+
+        for _ in 0..40 {
+            app.on_key(crate::app::Key::Down);
+        }
+        let scrolled = render(&app, 118, 30);
+        assert!(
+            scrolled.contains("AGENT"),
+            "scrolling should reach the end:\n{scrolled}"
+        );
+    }
+
+    #[test]
+    fn a_long_field_label_does_not_run_into_its_value() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        for line in detail_text(&app).lines() {
+            let trimmed = line.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("queued from here") {
+                assert!(rest.starts_with(' '), "label and value collide: {line:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn job_counters_say_they_are_since_connect() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        let out = detail_text(&app);
+        assert!(out.contains("since this monitor connected"), "{out}");
+    }
+
+    #[test]
+    fn a_node_with_no_agent_says_so_instead_of_showing_blanks() {
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\nSpeed:3000\n",
+        ));
+        detail_of(&mut app, "build01");
+        let out = detail_text(&app);
+        assert!(out.contains("no agent has answered"), "{out}");
+        assert!(out.contains("not measured"), "{out}");
+        // Scheduler-sourced facts are still shown.
+        assert!(out.contains("compile slots"), "{out}");
+        assert!(out.contains("3000"), "{out}");
+    }
+
+    #[test]
+    fn a_healthy_node_says_so_and_an_unhealthy_one_leads_with_the_problem() {
+        let mut app = busy_cluster();
+        let healthy = detail_of(&mut app, "build01");
+        assert!(healthy.contains("healthy"), "{healthy}");
+
+        app.on_key(crate::app::Key::Back);
+        app.apply(stats(2, "State:Offline\n"));
+        let sick = detail_of(&mut app, "build02");
+        assert!(sick.contains("OFFLINE"), "{sick}");
+        assert!(
+            sick.contains("last known"),
+            "an offline node's numbers must be labelled:\n{sick}"
+        );
+    }
+
+    #[test]
+    fn a_wrong_host_warning_names_both_sides() {
+        let mut app = busy_cluster();
+        app.apply_resource(
+            1,
+            ResourceResult::Ok(snapshot("someone-else", 50.0, 500, Some(60.0))),
+        );
+        let out = detail_of(&mut app, "build01");
+        assert!(out.contains("WRONG HOST?"), "{out}");
+        assert!(out.contains("someone-else"), "{out}");
+    }
+
+    #[test]
+    fn esc_unwinds_one_layer_at_a_time() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        app.show_help = true;
+
+        app.on_key(crate::app::Key::Back);
+        assert!(!app.show_help, "esc should close the overlay first");
+        assert!(app.detail, "and not the detail view as well");
+
+        app.on_key(crate::app::Key::Back);
+        assert!(!app.detail);
+        assert!(!app.should_quit, "leaving the detail view must not quit");
+
+        app.on_key(crate::app::Key::Back);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn enter_from_a_fresh_screen_shows_something() {
+        let mut app = busy_cluster();
+        assert_eq!(app.selected, None);
+        app.on_key(crate::app::Key::Enter);
+        assert!(app.detail, "Enter should pick a row rather than do nothing");
+        assert!(app.selected.is_some());
+    }
+
+    #[test]
+    fn arrows_scroll_the_detail_view_and_stop_at_the_end() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        assert_eq!(app.detail_scroll, 0);
+
+        for _ in 0..3 {
+            app.on_key(crate::app::Key::Down);
+        }
+        assert_eq!(app.detail_scroll, 3);
+        // The selection must not have moved underneath.
+        let selected = app.selected;
+
+        // Scrolling far past the end is clamped by the renderer's measurement,
+        // so coming back does not need the same number of keypresses.
+        for _ in 0..200 {
+            app.on_key(crate::app::Key::Down);
+        }
+        let mut ui = Ui::default();
+        let mut terminal = Terminal::new(TestBackend::new(118, 30)).unwrap();
+        terminal.draw(|f| draw(f, &app, &mut ui)).unwrap();
+        app.clamp_detail_scroll(ui.detail_max_scroll);
+        assert!(app.detail_scroll <= ui.detail_max_scroll);
+
+        app.on_key(crate::app::Key::Up);
+        assert_eq!(
+            app.selected, selected,
+            "scrolling must not change selection"
+        );
+    }
+
+    #[test]
+    fn sorting_keys_are_inert_while_the_detail_view_is_open() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        let before = app.sort;
+        app.on_key(crate::app::Key::CycleSort);
+        app.on_key(crate::app::Key::Sort(crate::app::SortKey::Mem));
+        assert_eq!(app.sort, before, "a hidden list must not reorder silently");
+    }
+
+    #[test]
+    fn the_footer_offers_only_the_keys_that_work_here() {
+        let mut app = busy_cluster();
+        let out = detail_of(&mut app, "build01");
+        assert!(out.contains("Esc") && out.contains("scroll"), "{out}");
+        assert!(!out.contains("by cpu/mem/load/jobs"), "{out}");
+    }
+
+    #[test]
+    fn the_detail_view_closes_when_its_node_disappears() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        assert!(app.detail);
+        // A reconnect clears the node list.
+        app.apply(connected());
+        assert!(!app.detail, "an empty pane is worse than the list");
+        let _ = render(&app, 118, 30);
+    }
+
+    #[test]
+    fn the_detail_view_renders_at_any_geometry() {
+        let mut app = busy_cluster();
+        detail_of(&mut app, "build01");
+        for (w, h) in [(10u16, 3u16), (20, 5), (40, 10), (60, 14), (200, 60)] {
+            let _ = render(&app, w, h);
+        }
+    }
+
+    #[test]
+    fn many_cores_wrap_into_columns_rather_than_overflowing() {
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:big\nIP:10.0.0.1\nMaxJobs:64\nNoRemote:false\n",
+        ));
+        let mut snap = snapshot("big", 50.0, 500, Some(60.0));
+        snap.cpu.cores = 64;
+        snap.cpu.per_core_busy_pct = (0..64).map(|i| i as f32).collect();
+        app.apply_resource(1, ResourceResult::Ok(snap));
+
+        let out = detail_of(&mut app, "big");
+        assert!(out.contains("64 cores"), "{out}");
+        assert!(out.contains("C0 "), "{out}");
+        // Every line must still fit the terminal.
+        for line in out.lines() {
+            assert!(line.chars().count() <= 118, "line overflows: {line:?}");
+        }
     }
 }

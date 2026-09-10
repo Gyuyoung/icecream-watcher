@@ -4,9 +4,9 @@ A terminal monitor for [Icecream](https://github.com/icecc/icecream) (`icecc`)
 distributed compile clusters — the cluster equivalent of `btop`, where each
 build node reads like a process.
 
-**Status: Phase 4.** Cluster band, bars, history graphs, sorting and keyboard
-navigation. The per-node detail view is Phase 5. See
-[ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
+**Status: Phase 5.** Cluster band, bars, history graphs, sorting, keyboard
+navigation and a per-node detail view. See [ARCHITECTURE.md](ARCHITECTURE.md)
+for the design and the roadmap.
 
 ```
 icecc-top  build-master:8765  proto 43  up 04:12:07   sort name   [?] help
@@ -36,6 +36,42 @@ sunk to the bottom. The queue is growing, and the band says so in a word.
 
 At a wide terminal each row also carries a two-minute CPU sparkline; narrower
 terminals drop whole columns rather than squeezing every bar into uselessness.
+
+`Enter` opens the node the overview points at — everything the main screen
+deliberately leaves out:
+
+```
+┌ build02  10.0.0.2  x86_64  proto 43 ───────────────────────────────────────────────────────────────────────────────┐
+│  healthy                                                                                                           │
+│                                                                                                                    │
+│CPU                                                                                                                 │
+│  ████████████▎░░░░░░░  61%   8 cores  @ 3100 MHz avg                                                               │
+│                                                                                                                    │
+│  C0  ██████░░  75%  C1  ████████ 100%  C2  ██████▍░  80%  C3  ██████▍░  80%  C4  █████▉░░  73%  C5  ██████▎░  78%  │
+│  C6  ██████▏░  76%  C7  ██████▏░  77%                                                                              │
+│                                                                                                                    │
+│    load average      14.20  12.00  9.00                                                                            │
+│    per core          1.77   (8 runnable of 500 processes)                                                          │
+│                                                                                                                    │
+│MEMORY                                                                                                              │
+│  ███████████████████▏  96%   30.1 GiB used of 31.3 GiB                                                             │
+│    available         1.2 GiB   (free 0.4 GiB, buffers 0.1 GiB, cached 0.7 GiB)                                     │
+│    swap              0 KiB of 8.0 GiB   (0%)                                                                       │
+│                                                                                                                    │
+│ICECREAM                                                                                                            │
+│    compile slots     10 of 16 in use                                                                               │
+│    queued from here  0                                                                                             │
+│    speed             2900 output bytes per user-second                                                             │
+│    jobs in           10 compiled here for others                                                                   │
+│    jobs out          0 submitted and compiled elsewhere                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Esc back  ↑↓/jk scroll  q quit   build02
+```
+
+Below the fold it continues with network throughput per interface, uptime, every
+thermal sensor the node exposes, and which agent answered. Anything wrong with
+the node — offline, no agent, a hostname that does not match — is stated at the
+top, before the numbers it would explain.
 ## Build
 
 Needs a Rust toolchain (1.75+). No `libicecc` and no C++ build dependencies —
@@ -110,14 +146,14 @@ off entirely.
 | Key | Action |
 |---|---|
 | `q`, `Ctrl-C` | quit |
-| `Esc` | close the help overlay, or quit |
-| `↑` / `k`, `↓` / `j` | move the selection |
-| `PgUp` / `PgDn` | move ten rows |
+| `Esc` | close the help overlay, leave the detail view, or quit |
+| `↑` / `k`, `↓` / `j` | move the selection, or scroll the detail view |
+| `PgUp` / `PgDn` | move or scroll ten rows |
 | `s` | cycle the sort key |
 | `c`, `m`, `l`, `i` | sort by CPU, memory, load, Icecream jobs |
 | `r` | redraw |
 | `?` | help |
-| `Enter` | node detail — Phase 5 |
+| `Enter` | open or close the node detail view |
 
 Metric sorts put the busiest node first, since the reason to sort by CPU is to
 see what is hot. Nodes with no measurement sort last rather than being flipped

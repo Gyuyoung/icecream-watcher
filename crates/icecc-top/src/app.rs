@@ -65,6 +65,10 @@ pub struct App {
     pub sort: SortKey,
     /// Selected node, tracked by host id so it survives a re-sort.
     pub selected: Option<u32>,
+    /// Whether the per-node detail view is open, for [`Self::selected`].
+    pub detail: bool,
+    /// Scroll offset within the detail view.
+    pub detail_scroll: u16,
     pub show_help: bool,
     /// Set when state changed since the last paint.
     dirty: bool,
@@ -87,6 +91,8 @@ impl App {
             cluster: Cluster::new(),
             sort: SortKey::Name,
             selected: None,
+            detail: false,
+            detail_scroll: 0,
             show_help: false,
             dirty: true,
             should_quit: false,
@@ -181,35 +187,92 @@ impl App {
         if let Some(id) = self.selected {
             if !self.cluster.nodes.contains_key(&id) {
                 self.selected = None;
+                // The detail view has nothing left to show; falling back to the
+                // list beats an empty pane.
+                self.detail = false;
             }
         }
+    }
+
+    /// The node the detail view is showing, if it is open.
+    pub fn detail_node(&self) -> Option<&Node> {
+        if !self.detail {
+            return None;
+        }
+        self.cluster.nodes.get(&self.selected?)
+    }
+
+    /// Open the detail view for the selection, selecting the first row if
+    /// nothing is selected yet — pressing Enter on a fresh screen should show
+    /// something rather than nothing.
+    fn open_detail(&mut self) {
+        if self.selected.is_none() {
+            self.move_selection(1);
+        }
+        if self.selected.is_some() {
+            self.detail = true;
+            self.detail_scroll = 0;
+            self.dirty = true;
+        }
+    }
+
+    /// Clamp the detail scroll to what the view can actually show.
+    pub fn clamp_detail_scroll(&mut self, max: u16) {
+        if self.detail_scroll > max {
+            self.detail_scroll = max;
+            self.dirty = true;
+        }
+    }
+
+    fn scroll_detail(&mut self, delta: isize) {
+        let next = (self.detail_scroll as isize + delta).max(0);
+        self.detail_scroll = next as u16;
+        self.dirty = true;
     }
 
     pub fn on_key(&mut self, key: Key) {
         match key {
             Key::Quit => self.should_quit = true,
             Key::Back => {
-                // Esc backs out of the help overlay first; only quits when
-                // there is nothing to back out of.
+                // Esc unwinds one layer at a time: overlay, then detail, then
+                // the session. Quitting straight from a detail view would be a
+                // surprise.
                 if self.show_help {
                     self.show_help = false;
+                    self.dirty = true;
+                } else if self.detail {
+                    self.detail = false;
                     self.dirty = true;
                 } else {
                     self.should_quit = true;
                 }
             }
             Key::Refresh => self.mark_dirty(),
+            Key::ToggleHelp => {
+                self.show_help = !self.show_help;
+                self.dirty = true;
+            }
+            // In the detail view the arrows scroll the pane rather than moving
+            // a selection that is not visible, and sorting a hidden list would
+            // change the screen you cannot see.
+            Key::Up if self.detail => self.scroll_detail(-1),
+            Key::Down if self.detail => self.scroll_detail(1),
+            Key::PageUp if self.detail => self.scroll_detail(-10),
+            Key::PageDown if self.detail => self.scroll_detail(10),
+            Key::Sort(_) | Key::CycleSort if self.detail => {}
+            Key::Enter if self.detail => {
+                self.detail = false;
+                self.dirty = true;
+            }
+
             Key::Up => self.move_selection(-1),
             Key::Down => self.move_selection(1),
             Key::PageUp => self.move_selection(-10),
             Key::PageDown => self.move_selection(10),
             Key::Sort(key) => self.set_sort(key),
             Key::CycleSort => self.set_sort(self.sort.next()),
-            Key::ToggleHelp => {
-                self.show_help = !self.show_help;
-                self.dirty = true;
-            }
-            Key::Enter | Key::Ignored => {}
+            Key::Enter => self.open_detail(),
+            Key::Ignored => {}
         }
     }
 }

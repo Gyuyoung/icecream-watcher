@@ -485,6 +485,17 @@ impl Cluster {
         }
     }
 
+    /// Jobs this node has submitted that are still waiting for a compile host.
+    ///
+    /// Pending jobs have no host yet, so they belong to whoever submitted them —
+    /// which is how `icemon` and `icecream-sundae` attribute them too.
+    pub fn pending_from(&self, host_id: u32) -> usize {
+        self.jobs
+            .values()
+            .filter(|j| j.state == JobState::Pending && j.client_id == Some(host_id))
+            .count()
+    }
+
     /// Median compile speed across nodes that have one, for spotting outliers.
     pub fn median_speed(&self) -> Option<f64> {
         let mut speeds: Vec<f64> = self
