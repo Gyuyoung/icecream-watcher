@@ -4,24 +4,38 @@ A terminal monitor for [Icecream](https://github.com/icecc/icecream) (`icecc`)
 distributed compile clusters — the cluster equivalent of `btop`, where each
 build node reads like a process.
 
-**Status: Phase 3.** It attaches to a scheduler, shows the cluster's nodes and
-jobs, and — where `icecc-top-agent` is installed — real CPU, memory, load and
-temperature per node. Bars, graphs, sorting and a detail view are Phase 4–5. See
+**Status: Phase 4.** Cluster band, bars, history graphs, sorting and keyboard
+navigation. The per-node detail view is Phase 5. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
 
 ```
-icecc-top  build-master:8765  proto 43   nodes 8   slots 47/64 (73%)   agents 7/8
-┌ nodes ─────────────────────────────────────────────────────────────────────────────┐
-│NODE                    CPU    MEM    LOAD   JOBS      SPEED   TEMP   IP            │
-│build01                 82%    71%    14.2   8/8       3200    71°    10.0.0.11     │
-│build02                 91%    88%    15.8   7/8       2900    78°    10.0.0.12     │
-│build03                 23%    31%    3.1    2/8       3100    52°    10.0.0.13     │
-│build04                 12%    —      9.4    6/8       940     —      10.0.0.14     │
-│laptop [local only]     —      —      —      0/0       —       —      10.0.0.40     │
-└────────────────────────────────────────────────────────────────────────────────────┘
-[q] quit  [r] redraw   jobs 17 active · 3 pending · 1 local   done 1284 remote / 12 local (since connect)
+icecc-top  build-master:8765  proto 43  up 04:12:07   sort name   [?] help
+┌ CLUSTER ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│SLOTS  38/88     █████████████████▎░░░░░░░░░░░░░░░░░░░░░░  43%  7 online · 1 down · 1 no agent                      │
+│QUEUE  7 wait    ▁▂▂▃▅▇█▇▅▃▂▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▂▃▄▅▆▇▆▅▄▃▂▁▂▃ ↑ rising    peak 12  38 remote · 0 local                  │
+│RATE   38/s      ▃▄▅▆▇█▇▆▅▄▃▄▅▆▇█▇▆▅▄▃▂▃▄▅▆▇█▇▆▅▄▃▄▅▆▇█▇▆  peak 52/s  12843 done since connect                      │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│NODE                        CPU               MEM            SLOTS      LOAD  SPEED  TEMP                           │
+│build01              ███████████▌  96%! ███████▎░░  72%  ███████▌ 15/16 14.2   3200   78°                           │
+│build02              ███████▍░░░░  61%  █████████▌  96%! █████░░░ 10/16 12.8   2900   71°                           │
+│build03              █████▊░░░░░░  48%  ████▏░░░░░  41%  ████░░░░  8/16  7.1   3100   63°                           │
+│build04              ██▋░░░░░░░░░  22%  ██▋░░░░░░░  26%  ██░░░░░░  4/16  3.4    940!  55°                           │
+│build05              ▌░░░░░░░░░░░   4%  █▊░░░░░░░░  18%  ░░░░░░░░  0/8   0.4   3050   41°                           │
+│build07              ············    —  ··········    —  ░░░░░░░░  0/16    —   3000     —                           │
+│laptop local         █▌░░░░░░░░░░  12%  ██████▎░░░  62%  ▋░░░░░░░  1/12  1.9      —   52°                           │
+│build06 down         ············    —  ··········    —               —    —      —     —                           │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+q quit  ↑↓/jk select  s sort  c m l i by cpu/mem/load/jobs  ? help   selected build02
 ```
 
+Reading it: `build01` is CPU-bound and `build02` memory-bound — the `!` says
+which, without comparing numbers. `build04` is a slow outlier. `build07` has no
+agent, so its resource cells claim nothing. `build06` has dropped out and has
+sunk to the bottom. The queue is growing, and the band says so in a word.
+
+At a wide terminal each row also carries a two-minute CPU sparkline; narrower
+terminals drop whole columns rather than squeezing every bar into uselessness.
 ## Build
 
 Needs a Rust toolchain (1.75+). No `libicecc` and no C++ build dependencies —
@@ -95,36 +109,52 @@ off entirely.
 
 | Key | Action |
 |---|---|
-| `q`, `Esc`, `Ctrl-C` | quit |
+| `q`, `Ctrl-C` | quit |
+| `Esc` | close the help overlay, or quit |
+| `↑` / `k`, `↓` / `j` | move the selection |
+| `PgUp` / `PgDn` | move ten rows |
+| `s` | cycle the sort key |
+| `c`, `m`, `l`, `i` | sort by CPU, memory, load, Icecream jobs |
 | `r` | redraw |
+| `?` | help |
+| `Enter` | node detail — Phase 5 |
 
-Navigation and sorting land in Phase 4, when there is data worth sorting by.
+Metric sorts put the busiest node first, since the reason to sort by CPU is to
+see what is hot. Nodes with no measurement sort last rather than being flipped
+to the top, and offline nodes always sink below live ones. The selection follows
+its node through a re-sort.
 
-## Reading the columns
+## Reading the screen
 
-Two of these mean something other than what they look like, because of how the
-scheduler reports:
-
-- **LOAD** is Icecream's composite scheduling weight on a 0–1000 scale
-  (`max(1000 - idle, memory pressure)`, forced to 1000 when the node is low on
-  disk). It is **not** CPU utilisation. Real CPU percentages need the Phase 3
-  agent.
-- **SPEED** is `output bytes / user-second`, and is **unknown (`—`) until a node
-  has actually compiled something** — a fresh cluster shows `—` everywhere. It
-  is not zero-because-slow.
-- **JOBS** is remote compiles running / slots offered. A `+2L` suffix counts
-  local compiles, which occupy no scheduler slot.
-- **CPU**, **MEM** and **TEMP** need an agent on that node; `—` means nobody
-  measured, which is not the same as 0. **LOAD** prefers the agent's 1 Hz
-  reading and falls back to the scheduler's slower one.
-- Node labels: `[offline]`, `[local only]` (the node refuses remote jobs),
-  `[no reply]` (the scheduler has pinged it and is still waiting),
-  `[stale]` (its agent answered before and has gone quiet), `[agent error]`
-  (something answered on the agent port but was unusable), and
-  `[wrong host?]` (the agent there calls itself something else, so this row's
-  metrics may belong to another machine).
+- `—` and `····` mean **not measured**, never zero. An idle node reads `0%`; a
+  node with no agent reads `—`. The two must not look the same.
+- `!` marks the metric that makes a node a bottleneck — memory pressure first,
+  then CPU saturation, then every slot taken on a machine that is otherwise
+  idle — or, on SPEED, a node well below the cluster median.
+- **Dim rows are idle.** Offline rows strike through and sink to the bottom.
+- **SLOTS** is remote compiles running / slots offered. Local compiles occupy no
+  scheduler slot and are counted separately.
+- **SPEED** is `output bytes / user-second`, and is **unknown until a node has
+  actually compiled something** — a fresh cluster shows `—` everywhere. It is
+  not zero-because-slow.
+- **LOAD** prefers the agent's 1 Hz reading and falls back to the scheduler's,
+  which only updates when load shifts by 10 %. It is coloured by load *per
+  core*, so a 4-core and a 64-core node can be compared.
+- The **QUEUE** and **RATE** graphs are scaled to their own peak — a queue has
+  no natural maximum — and the peak is printed next to them so a flat graph at
+  full height cannot be mistaken for a queue at some limit.
+- Badges after a node name: `down`, `local` (refuses remote jobs), `no ack` (the
+  scheduler has pinged it and is still waiting), `stale` (its agent answered
+  before and has gone quiet), `agent?` (something answered on the agent port but
+  was unusable), `host?` (the agent there calls itself something else, so this
+  row's metrics may belong to another machine).
 - Cumulative counters are **since connect**. Job ids only mean anything within
   one scheduler session, so a reconnect necessarily resets them.
+
+The scheduler's own `Load` field — a composite 0–1000 scheduling weight,
+`max(1000 - idle, memory pressure)`, forced to 1000 when a node is low on disk —
+is deliberately **not** shown as a bar. It is not CPU utilisation, and drawing it
+as one would be a confidently wrong picture.
 
 ## Notes on connecting
 
@@ -154,6 +184,9 @@ likely to be useful to other tools.
 ```sh
 cargo test
 ```
+
+The screenshot above is real output from the renderer, not a mock-up; regenerate
+it with `cargo test -p icecc-top screenshot -- --ignored --nocapture`.
 
 Protocol tests run against bytes captured from a real scheduler
 (`contrib/capture/`), so they need no cluster — see

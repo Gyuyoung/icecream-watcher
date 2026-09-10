@@ -1,6 +1,6 @@
 # icecc-top — Architecture (Phase 1: Research)
 
-Status: **Phase 1 research complete; Phases 2 and 3 implemented** (see §8).
+Status: **Phase 1 research complete; Phases 2, 3 and 4 implemented** (see §8).
 Decisions approved 2026-09-10: **Rust + ratatui/crossterm/tokio**, **Tier 0+1** collection (§4, §5).
 Target: a btop-class TUI for monitoring an Icecream (icecc) distributed compile cluster.
 
@@ -425,7 +425,7 @@ IceccTop/
 │   │   ├── src/lib.rs            Snapshot and friends; units in field names
 │   │   └── src/client.rs         one GET, no HTTP stack pulled in
 │   ├── icecc-model/              Cluster, Node, job accounting, agent metrics
-│   │                             (history ring buffers: planned, Phase 4)
+│   │   └── src/history.rs        sample ring buffers and trend detection
 │   ├── icecc-agent/              icecc-top-agent
 │   │   ├── src/parse.rs          pure /proc and /sys parsers
 │   │   ├── src/sampler.rs        sampling, deltas, sensor selection
@@ -434,7 +434,9 @@ IceccTop/
 │       ├── src/main.rs           CLI, runtime wiring, terminal setup
 │       ├── src/app.rs            state, key handling (sort modes: planned)
 │       ├── src/collect.rs        parallel agent polling
-│       └── src/ui.rs             rendering (splits into ui/ at Phase 4)
+│       └── src/ui/               rendering
+│           ├── mod.rs            cluster band, node table, help overlay
+│           └── widgets.rs        block bars, sparklines, colour ramps
 └── contrib/
     ├── capture/                  protocol captures + format docs
     │   ├── README.md
@@ -605,6 +607,81 @@ Decisions worth recording:
 | 120 nodes are polled inside one interval | collector test with 120 targets against a local agent |
 | the agent is deployable | `x86_64-unknown-linux-musl` build is a 2.0 MB static-pie binary with no dynamic dependencies; the systemd unit passes `systemd-analyze verify` |
 | neither disturbs the machine | 30 s attached to the live cluster: agent **0.7 % CPU, 3.7 MiB RSS**; monitor **0.0 % CPU, 4.3 MiB RSS** |
+
+## 8c. Phase 4 — btop-like UI — **done**
+
+Phase 3 added the data; this phase spends it on **visual hierarchy** rather than
+on more columns. The prompt's nine questions were the acceptance criteria, and a
+grid of equally-weighted numbers cannot answer them however many numbers it has
+— which is fair criticism the earlier phases had earned: structurally, Phase 3's
+table was the same shape as `icecream-sundae`'s.
+
+What changed:
+
+* A **cluster band** answers the whole-cluster questions before the table is
+  read at all — slot occupancy as a bar, queue depth as a sparkline, throughput
+  — so "how full is the cluster", "is the queue growing" and "is it being used
+  efficiently" need no row-by-row reading.
+* **Three bars per node** (CPU, memory, slots) with eighth-block partials, so a
+  3 % difference between rows is visible and lengths are comparable without
+  reading a figure.
+* **`!` marks the limiting metric** — memory pressure first, then CPU
+  saturation, then all slots taken on an otherwise idle machine — which is what
+  separates "CPU constrained" from "memory constrained" at a glance. On SPEED it
+  marks a node below half the cluster median, answering "is one node
+  significantly slower".
+* **Colour ramps only as a metric becomes a problem**, and temperature
+  thresholds are deliberately high (80/90 °C): build machines run hot, and
+  colouring 70 °C as alarming would cry wolf.
+* **Idle is quiet, unhealthy is loud.** Idle rows dim; offline rows strike
+  through and sink below live ones; badges name the one thing wrong with a row.
+* **Two minutes of history per node**, sampled on a wall-clock timer rather than
+  per event, so a quiet cluster's graphs still scroll and the horizontal axis
+  means time.
+* **Sorting and navigation** on the documented keys, with a help overlay.
+* Everything else — IP, platform, protocol, features, per-core detail, network —
+  was **removed** from the main screen and belongs in the Phase 5 detail view.
+
+Decisions worth recording:
+
+* **A gap is not a zero, in graphs too.** A missing sample is stored as `NaN`
+  and drawn as a space, while a measured zero draws the lowest glyph. A node
+  whose agent was down for ten seconds must not look like a node that was idle
+  for ten seconds.
+* **Young graphs grow in from the right**, padded with gaps on the left, rather
+  than stretching a few samples across the full width and implying history that
+  does not exist.
+* **Queue and rate graphs are scaled to their own peak, and the peak is
+  printed.** A queue has no natural maximum, so peak-scaling is the only honest
+  choice — but a queue that has sat at seven all window then draws at full
+  height, which without the stated scale reads as "at some limit".
+* **Trends need a threshold.** Without one a queue oscillating between three and
+  four jobs would alternate between "rising" and "draining" every second, so a
+  trend is only named past a minimum delta and a minimum number of samples.
+* **The bottleneck marker gets its own cell in the column budget.** It was
+  initially truncated away — visible only in a test against the rendered buffer
+  — which is exactly the row where it matters most.
+* **The badge wins over the name.** A long hostname is elided with `…` so its
+  badge survives; the badge is *why* the row deserves attention.
+* **Narrow terminals drop whole columns** rather than squeezing every bar: a bar
+  under about four cells conveys nothing, so breakpoints remove SPEED, then
+  TEMP, then the slot bar, and a short terminal drops the cluster band to keep
+  the table.
+
+### What was verified, and how
+
+| Claim | Evidence |
+|---|---|
+| the design answers the nine questions | rendered-buffer tests assert each one: band figures, per-metric bottleneck markers on different columns, a slow outlier flagged against the median, `1 down`/`1 no agent` health counts, and a growing queue labelled `rising` |
+| bars are honest | widget tests cover exact width at every percentage, clamping, and that 1 % is distinguishable from 0 % and from 12 % |
+| gaps and zeroes differ | asserted in both the history buffer and the sparkline |
+| the band is comparable | a test fills every series and asserts all three graphs occupy identical columns; another asserts a single sample draws at the right edge |
+| selection and sorting behave | busiest-first per key, unmeasured last, offline last, selection follows its node through a re-sort and is dropped when its node disappears |
+| it survives any geometry | rendered at 10×3 through 300×100, with the help overlay open, and with 120 nodes scrolling to the selection |
+| it works on the real cluster | run against the live two-node cluster under synthetic load: 95 % CPU with the `!` marker, a 46 % memory bar, a 2-minute CPU sparkline, 94 °C, and the agentless node drawn with `····` placeholders |
+
+The README screenshot is generated by an ignored test that renders through the
+real renderer, so the picture cannot drift from the code.
 
 ## 9. Open questions for Phase 2+
 

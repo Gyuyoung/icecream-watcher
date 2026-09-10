@@ -22,7 +22,8 @@ use ratatui::crossterm::terminal::{
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 
-use crate::app::{classify, App, FRAME_INTERVAL};
+use crate::app::{classify, App, FRAME_INTERVAL, HISTORY_INTERVAL};
+use crate::ui::Ui;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -252,20 +253,26 @@ async fn run_tui(
     let mut keys = spawn_input_reader();
     let mut app = App::new();
     app.cluster.metrics_stale_after = stale_after;
+    let mut ui = Ui::default();
     let (targets_tx, mut samples) = split(collector);
     let mut ticker = tokio::time::interval(FRAME_INTERVAL);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // Separate from the frame timer: graphs advance on wall-clock seconds, so
+    // their horizontal axis means time rather than "however many frames".
+    let mut history = tokio::time::interval(HISTORY_INTERVAL);
+    history.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     let result = loop {
         tokio::select! {
             // Coalesce bursts: a 100-node login replay is one repaint, not 100.
             _ = ticker.tick() => {
                 if app.take_dirty() {
-                    if let Err(e) = terminal.draw(|f| ui::draw(f, &app)) {
+                    if let Err(e) = terminal.draw(|f| ui::draw(f, &app, &mut ui)) {
                         break Err(e);
                     }
                 }
             }
+            _ = history.tick() => app.tick_history(),
             update = rx.recv() => match update {
                 Some(update) => {
                     app.apply(update);

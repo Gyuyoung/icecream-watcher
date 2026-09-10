@@ -10,8 +10,12 @@
 //! * `MON_STATS` records are partial, so node fields are merged rather than
 //!   replaced (see [`icecc_proto::StatsRecord::merge_into`]).
 
+pub mod history;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
+
+pub use history::{History, Trend};
 
 use icecc_metrics::Snapshot;
 use icecc_proto::msg::JobDone;
@@ -96,6 +100,12 @@ pub struct Node {
     /// which means we are probably talking to the wrong host (NAT, a reused
     /// address, a stale DNS entry).
     pub identity_mismatch: bool,
+    /// Recent CPU busy percentage, one sample per history tick.
+    pub cpu_history: History,
+    /// Recent memory used percentage.
+    pub mem_history: History,
+    /// Recent compile-slot occupancy, as a percentage of this node's slots.
+    pub slots_history: History,
 }
 
 impl Node {
@@ -114,6 +124,9 @@ impl Node {
             resource_state: ResourceState::default(),
             resources_at: None,
             identity_mismatch: false,
+            cpu_history: History::default(),
+            mem_history: History::default(),
+            slots_history: History::default(),
         }
     }
 
@@ -228,7 +241,63 @@ impl Node {
         let cores = self.cores()?;
         self.resources.as_ref()?.load.per_core(cores)
     }
+
+    /// Compile slots in use, as a percentage. `None` when the node offers none.
+    pub fn slot_pct(&self) -> Option<f32> {
+        let max = self.max_jobs();
+        (max > 0).then(|| (self.current_jobs() as f32 * 100.0 / max as f32).min(100.0))
+    }
+
+    /// Whether this node is doing anything at all, for dimming idle rows.
+    pub fn is_busy(&self) -> bool {
+        self.current_jobs() > 0
+            || !self.local_jobs.is_empty()
+            || self.cpu_pct().is_some_and(|c| c >= BUSY_CPU_PCT)
+    }
+
+    /// Which single metric is holding this node back, if any.
+    ///
+    /// The point is to separate "CPU constrained" from "memory constrained" at
+    /// a glance; without it both just look like a busy node.
+    pub fn bottleneck(&self) -> Option<Bottleneck> {
+        if self.offline {
+            return None;
+        }
+        let cpu = self.cpu_pct().unwrap_or(0.0);
+        let mem = self.mem_pct().unwrap_or(0.0);
+
+        // Memory first: a node that is out of memory will thrash rather than
+        // compile, so it is the more actionable of the two.
+        if mem >= MEM_PRESSURE_PCT {
+            return Some(Bottleneck::Memory);
+        }
+        if cpu >= CPU_SATURATED_PCT {
+            return Some(Bottleneck::Cpu);
+        }
+        if self.slot_pct().is_some_and(|s| s >= 100.0) {
+            return Some(Bottleneck::Slots);
+        }
+        None
+    }
 }
+
+/// A node's limiting factor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bottleneck {
+    Cpu,
+    Memory,
+    /// Every compile slot is taken, but the machine itself is not saturated —
+    /// this node could take more work if `MaxJobs` allowed it.
+    Slots,
+}
+
+/// Above this, a node counts as doing work even with no compile jobs assigned
+/// (it may be running a local build, or something unrelated).
+const BUSY_CPU_PCT: f32 = 15.0;
+/// Above this, CPU is the limiting factor.
+const CPU_SATURATED_PCT: f32 = 85.0;
+/// Above this, memory pressure will hurt compile throughput.
+const MEM_PRESSURE_PCT: f32 = 90.0;
 
 /// What a job is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -321,6 +390,15 @@ pub struct Cluster {
     /// interval, so this can be tight — unlike scheduler stats, which are
     /// change-driven and legitimately silent for minutes.
     pub metrics_stale_after: Duration,
+    /// Jobs waiting for a node, sampled per tick. This is the series that
+    /// answers "is the scheduler queue growing?".
+    pub pending_history: History,
+    /// Cluster-wide slot occupancy percentage per tick.
+    pub slots_history: History,
+    /// Jobs completed during each tick, i.e. throughput.
+    pub rate_history: History,
+    /// Completion total at the previous tick, to turn a counter into a rate.
+    last_completed: u64,
 }
 
 impl Default for Cluster {
@@ -341,6 +419,10 @@ impl Cluster {
             counters_since: Instant::now(),
             unknown_messages: BTreeMap::new(),
             metrics_stale_after: Duration::from_secs(5),
+            pending_history: History::default(),
+            slots_history: History::default(),
+            rate_history: History::default(),
+            last_completed: 0,
         }
     }
 
@@ -355,6 +437,82 @@ impl Cluster {
         self.jobs.clear();
         self.totals = Totals::default();
         self.counters_since = Instant::now();
+        self.pending_history = History::default();
+        self.slots_history = History::default();
+        self.rate_history = History::default();
+        self.last_completed = 0;
+    }
+
+    /// Advance every history series by one sample.
+    ///
+    /// Called on a fixed timer rather than per event, so a quiet cluster's
+    /// graphs still scroll instead of freezing — and so the horizontal axis
+    /// means time rather than "however many events happened".
+    pub fn tick_history(&mut self) {
+        let summary = self.summary();
+
+        self.pending_history.push(Some(summary.pending_jobs as f32));
+        self.slots_history
+            .push(summary.slot_usage().map(|p| p as f32));
+
+        let completed = self.totals.completed_remote + self.totals.completed_local;
+        // Saturating, because a reconnect resets the counter.
+        let done_this_tick = completed.saturating_sub(self.last_completed);
+        self.last_completed = completed;
+        self.rate_history.push(Some(done_this_tick as f32));
+
+        let stale_after = self.metrics_stale_after;
+        for node in self.nodes.values_mut() {
+            if node.offline {
+                // Not measured rather than zero: a dead node has no CPU load,
+                // it has no reading at all.
+                node.cpu_history.push(None);
+                node.mem_history.push(None);
+                node.slots_history.push(None);
+                continue;
+            }
+            // Stale metrics are a gap too, so a graph cannot flatline on a
+            // value that stopped being true a minute ago. Values are read out
+            // before pushing, because the push borrows the node mutably.
+            let (cpu, mem) = match node.fresh_metrics(stale_after) {
+                Some(r) => (Some(r.cpu.total_busy_pct), r.mem.used_pct()),
+                None => (None, None),
+            };
+            let slots = node.slot_pct();
+            node.cpu_history.push(cpu);
+            node.mem_history.push(mem);
+            node.slots_history.push(slots);
+        }
+    }
+
+    /// Median compile speed across nodes that have one, for spotting outliers.
+    pub fn median_speed(&self) -> Option<f64> {
+        let mut speeds: Vec<f64> = self
+            .nodes
+            .values()
+            .filter(|n| !n.offline)
+            .filter_map(|n| n.speed())
+            .collect();
+        if speeds.is_empty() {
+            return None;
+        }
+        speeds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Some(speeds[speeds.len() / 2])
+    }
+
+    /// Whether a node is markedly slower than the rest of the cluster.
+    ///
+    /// Answers "is one node significantly slower than the others?" without
+    /// making the user compare numbers by eye. Needs at least three nodes with
+    /// a measured speed, or the median is not meaningful.
+    pub fn is_slow_outlier(&self, node: &Node) -> bool {
+        if self.nodes.values().filter(|n| n.speed().is_some()).count() < 3 {
+            return false;
+        }
+        match (node.speed(), self.median_speed()) {
+            (Some(speed), Some(median)) if median > 0.0 => speed < median * SLOW_OUTLIER_FRACTION,
+            _ => false,
+        }
     }
 
     pub fn is_connected(&self) -> bool {
@@ -633,6 +791,9 @@ impl Cluster {
         v
     }
 }
+
+/// A node slower than this fraction of the cluster median is called out.
+const SLOW_OUTLIER_FRACTION: f64 = 0.5;
 
 /// Whether a scheduler-reported node name and an agent hostname plausibly
 /// describe the same machine.
