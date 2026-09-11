@@ -1,0 +1,193 @@
+//! Braille-dot graphs, in the style `btop` uses.
+//!
+//! A block sparkline gets eight levels out of one character cell. A braille
+//! cell carries two dot columns by four dot rows, so an `n`-row graph has `4n`
+//! vertical levels and twice the horizontal resolution — which is why btop's
+//! graphs read as curves rather than as bar charts, and why this only earns its
+//! keep where there is vertical room to spend. One row of braille would be
+//! *four* levels, worse than the blocks it replaced, so the node table keeps
+//! its block sparklines and this is used where the layout can give a series
+//! two rows or more.
+
+use ratatui::style::Color;
+
+use crate::ui::widgets;
+
+/// Dot columns in one braille character.
+pub const CELL_COLS: usize = 2;
+/// Dot rows in one braille character.
+pub const CELL_ROWS: usize = 4;
+
+/// The bit for each dot, indexed `[column][row]` with row 0 at the top.
+///
+/// Not a plain grid: braille was six dots before the eight-dot extension, so
+/// the bottom row was bolted on as the two high bits rather than continuing the
+/// sequence.
+const DOT_BITS: [[u8; CELL_ROWS]; CELL_COLS] = [
+    [0x01, 0x02, 0x04, 0x40],
+    [0x08, 0x10, 0x20, 0x80],
+];
+
+/// U+2800 BRAILLE PATTERN BLANK. Adding the dot bits to it gives the glyph.
+const BRAILLE_BASE: u32 = 0x2800;
+
+/// Render `values` as a filled area graph `width` characters wide and `rows`
+/// tall, topmost row first.
+///
+/// `values` is indexed by **dot** column, so it should hold `width * CELL_COLS`
+/// samples; the caller decides how history maps onto the axis. A non-finite
+/// sample draws nothing at all, so a gap in measurement stays visibly different
+/// from a measured zero — which draws the bottom dot, exactly as the block
+/// sparkline draws its lowest glyph.
+pub fn area(values: &[f32], max: f32, width: usize, rows: usize) -> Vec<String> {
+    if width == 0 || rows == 0 {
+        return Vec::new();
+    }
+    let max = if max.is_finite() && max > 0.0 { max } else { 1.0 };
+    let dot_rows = rows * CELL_ROWS;
+    let mut cells = vec![vec![0u8; width]; rows];
+
+    for (x, &value) in values.iter().enumerate().take(width * CELL_COLS) {
+        if !value.is_finite() {
+            continue; // a gap: no dots, not a zero
+        }
+        let scaled = (value / max).clamp(0.0, 1.0);
+        // At least one dot for any measured value, so zero is information
+        // rather than an empty column that reads as "no data".
+        let level = ((scaled * dot_rows as f32).round() as usize).clamp(1, dot_rows);
+
+        let cell_col = x / CELL_COLS;
+        let sub_col = x % CELL_COLS;
+        for filled in 0..level {
+            let dot_row = dot_rows - 1 - filled; // fill upward from the baseline
+            cells[dot_row / CELL_ROWS][cell_col] |= DOT_BITS[sub_col][dot_row % CELL_ROWS];
+        }
+    }
+
+    cells
+        .into_iter()
+        .map(|row| {
+            row.into_iter()
+                .map(|bits| char::from_u32(BRAILLE_BASE + bits as u32).unwrap_or(' '))
+                .collect()
+        })
+        .collect()
+}
+
+/// Colour for character row `r` of an `rows`-tall graph whose axis is a 0..100
+/// utilisation.
+///
+/// Colour comes from the row's height rather than from the value, so a graph
+/// reads the same way as the bars beside it: the band near the top is the
+/// alarming one wherever the curve happens to be. Series with no natural
+/// maximum — a queue, a completion rate — must *not* use this: at peak scaling
+/// the top row means "the most we have seen", which is not the same as "full".
+pub fn row_colour(r: usize, rows: usize) -> Color {
+    if rows == 0 {
+        return Color::Green;
+    }
+    let midpoint = ((rows - r) as f32 - 0.5) / rows as f32 * 100.0;
+    widgets::ramp(midpoint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flat(value: f32, dots: usize) -> Vec<f32> {
+        vec![value; dots]
+    }
+
+    #[test]
+    fn the_grid_is_the_size_asked_for() {
+        for (w, h) in [(1usize, 1usize), (4, 2), (30, 3), (60, 6)] {
+            let out = area(&flat(50.0, w * CELL_COLS), 100.0, w, h);
+            assert_eq!(out.len(), h, "{w}x{h} rows");
+            for line in &out {
+                assert_eq!(line.chars().count(), w, "{w}x{h} width");
+            }
+        }
+    }
+
+    #[test]
+    fn full_is_solid_and_empty_is_blank() {
+        let full = area(&flat(100.0, 8), 100.0, 4, 2);
+        assert!(full.iter().all(|l| l.chars().all(|c| c == '⣿')), "{full:?}");
+
+        // No samples at all: every cell is the blank braille pattern, so the
+        // graph area keeps its shape without implying a measured zero.
+        let empty = area(&[f32::NAN; 8], 100.0, 4, 2);
+        assert!(empty.iter().all(|l| l.chars().all(|c| c == '⠀')), "{empty:?}");
+    }
+
+    #[test]
+    fn a_measured_zero_is_not_a_gap() {
+        // The trap this whole codebase keeps guarding against: a node whose
+        // agent was down must not look like a node that was idle.
+        let zero = area(&flat(0.0, 2), 100.0, 1, 1);
+        let gap = area(&[f32::NAN; 2], 100.0, 1, 1);
+        assert_ne!(zero, gap);
+        assert_eq!(zero[0], "⣀", "a zero draws the baseline dots");
+    }
+
+    #[test]
+    fn the_area_fills_upward_from_the_baseline() {
+        // Half height over a 2-row graph means the bottom row solid and the
+        // top row blank, not the other way up.
+        let out = area(&flat(50.0, 2), 100.0, 1, 2);
+        assert_eq!(out[0], "⠀", "top row should be empty");
+        assert_eq!(out[1], "⣿", "bottom row should be full");
+    }
+
+    #[test]
+    fn taller_graphs_resolve_finer_differences() {
+        // The whole reason to spend vertical space. One row is four levels —
+        // 25% each — so two readings 7% apart land on the same dot; four rows
+        // is sixteen levels and tells them apart.
+        assert_eq!(
+            area(&flat(50.0, 2), 100.0, 1, 1),
+            area(&flat(57.0, 2), 100.0, 1, 1),
+            "one row cannot resolve 7%"
+        );
+        assert_ne!(
+            area(&flat(50.0, 2), 100.0, 1, 4),
+            area(&flat(57.0, 2), 100.0, 1, 4),
+            "four rows should resolve 7%"
+        );
+    }
+
+    #[test]
+    fn out_of_range_values_are_clamped_not_wrapped() {
+        let over = area(&flat(500.0, 2), 100.0, 1, 1);
+        assert_eq!(over, area(&flat(100.0, 2), 100.0, 1, 1));
+        let under = area(&flat(-20.0, 2), 100.0, 1, 1);
+        assert_eq!(under, area(&flat(0.0, 2), 100.0, 1, 1));
+    }
+
+    #[test]
+    fn a_nonsense_maximum_cannot_panic_or_blank_the_graph() {
+        for max in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let out = area(&flat(1.0, 2), max, 1, 1);
+            assert_eq!(out.len(), 1);
+        }
+    }
+
+    #[test]
+    fn the_two_dot_columns_of_a_cell_are_independent() {
+        // Half the horizontal resolution would be silently lost if both dot
+        // columns of a cell shared a value.
+        let rising = area(&[0.0, 100.0], 100.0, 1, 1);
+        let falling = area(&[100.0, 0.0], 100.0, 1, 1);
+        assert_ne!(rising, falling, "a cell must carry two samples, not one");
+        assert_eq!(rising[0], "⣸", "left baseline only, right full: {rising:?}");
+        assert_eq!(falling[0], "⣇", "left full, right baseline only: {falling:?}");
+    }
+
+    #[test]
+    fn colour_follows_height_not_the_curve() {
+        let rows = 4;
+        assert_eq!(row_colour(0, rows), widgets::ramp(87.5));
+        assert_eq!(row_colour(rows - 1, rows), widgets::ramp(12.5));
+        assert_eq!(row_colour(0, 0), Color::Green, "must not divide by zero");
+    }
+}

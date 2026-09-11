@@ -91,6 +91,46 @@ impl History {
             })
     }
 
+    /// The whole retained window drawn across `width` columns, oldest first.
+    ///
+    /// Unlike [`Self::window`], which gives one column per sample, this keeps
+    /// the **time axis fixed**: a full buffer always spans the full width, so a
+    /// wide graph shows the same two minutes as a narrow one, drawn larger. A
+    /// buffer that is a third full occupies only the right-hand third, which
+    /// keeps the promise that a young series grows in from the right rather
+    /// than stretching a handful of samples across the whole box.
+    ///
+    /// No value is invented between samples: a column that covers several
+    /// samples averages them, and a column covering one repeats it.
+    pub fn stretched(&self, width: usize) -> Vec<f32> {
+        if width == 0 {
+            return Vec::new();
+        }
+        let have = self.samples.len();
+        if have == 0 {
+            return vec![f32::NAN; width];
+        }
+        // How much of the axis this much history has earned.
+        let filled = ((width * have) as f64 / self.capacity as f64).round() as usize;
+        let filled = filled.clamp(1, width);
+
+        let mut out = vec![f32::NAN; width - filled];
+        for i in 0..filled {
+            let start = (i * have) / filled;
+            let end = ((((i + 1) * have) / filled).max(start + 1)).min(have);
+            let mut sum = 0.0f32;
+            let mut n = 0u32;
+            for v in self.samples.iter().skip(start).take(end - start) {
+                if v.is_finite() {
+                    sum += *v;
+                    n += 1;
+                }
+            }
+            out.push(if n > 0 { sum / n as f32 } else { f32::NAN });
+        }
+        out
+    }
+
     /// The most recent `width` samples, oldest first, padded at the front with
     /// gaps so a young series draws at the right-hand edge and grows leftwards
     /// rather than stretching to fill the space.
@@ -163,6 +203,104 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn filled_with(values: &[f32]) -> History {
+        let mut h = History::new(120);
+        for v in values {
+            h.push(Some(*v));
+        }
+        h
+    }
+
+    #[test]
+    fn a_full_buffer_spans_the_whole_width() {
+        let h = filled_with(&vec![50.0; 120]);
+        let out = h.stretched(40);
+        assert_eq!(out.len(), 40);
+        assert!(out.iter().all(|v| v.is_finite()), "{out:?}");
+    }
+
+    #[test]
+    fn the_time_axis_does_not_change_with_the_width() {
+        // The promise a wide graph makes: it shows the same two minutes as a
+        // narrow one, drawn larger. Half a buffer is half the axis at every
+        // width, so two graphs side by side stay comparable.
+        let h = filled_with(&vec![50.0; 60]);
+        for width in [20usize, 40, 100, 250] {
+            let out = h.stretched(width);
+            let drawn = out.iter().filter(|v| v.is_finite()).count();
+            let ratio = drawn as f64 / width as f64;
+            assert!(
+                (ratio - 0.5).abs() < 0.05,
+                "width {width}: {drawn}/{width} drawn, expected about half"
+            );
+        }
+    }
+
+    #[test]
+    fn a_young_series_stays_at_the_right_hand_edge() {
+        // Same promise window() makes, kept differently: gaps at the front, so
+        // a handful of samples is never stretched into history that does not
+        // exist.
+        let h = filled_with(&[1.0, 2.0, 3.0]);
+        let out = h.stretched(40);
+        let first_drawn = out.iter().position(|v| v.is_finite()).unwrap();
+        assert!(first_drawn > 30, "drawn from column {first_drawn} of 40");
+        assert!(out.last().unwrap().is_finite(), "the newest sample is last");
+    }
+
+    #[test]
+    fn widening_repeats_samples_rather_than_inventing_values() {
+        // Two samples across eight columns must be those two values, not six
+        // interpolated ones that were never measured.
+        let h = filled_with(&vec![0.0; 118]);
+        let mut h = h;
+        h.push(Some(10.0));
+        h.push(Some(20.0));
+        let out = h.stretched(240);
+        let seen: std::collections::BTreeSet<String> = out
+            .iter()
+            .filter(|v| v.is_finite())
+            .map(|v| format!("{v}"))
+            .collect();
+        assert!(
+            seen.iter().all(|v| v == "0" || v == "10" || v == "20"),
+            "invented values: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn narrowing_averages_rather_than_dropping_samples() {
+        // A spike must not vanish just because the graph is narrow.
+        let mut values = vec![0.0f32; 120];
+        values[60] = 100.0;
+        let out = filled_with(&values).stretched(12);
+        assert!(
+            out.iter().any(|v| v.is_finite() && *v > 0.0),
+            "the spike was dropped: {out:?}"
+        );
+    }
+
+    #[test]
+    fn gaps_survive_being_resampled() {
+        // The whole point of NaN: a bucket with no measurement stays a gap.
+        let mut h = History::new(120);
+        for _ in 0..120 {
+            h.push(None);
+        }
+        let out = h.stretched(30);
+        assert!(out.iter().all(|v| !v.is_finite()), "{out:?}");
+    }
+
+    #[test]
+    fn an_empty_or_degenerate_request_cannot_panic() {
+        let empty = History::new(120);
+        assert!(empty.stretched(10).iter().all(|v| !v.is_finite()));
+        assert!(empty.stretched(0).is_empty());
+        assert!(filled_with(&[1.0]).stretched(0).is_empty());
+        // One column is still one column, however much history there is.
+        assert_eq!(filled_with(&vec![1.0; 120]).stretched(1).len(), 1);
+    }
 
     fn filled(values: &[f32]) -> History {
         let mut h = History::new(8);

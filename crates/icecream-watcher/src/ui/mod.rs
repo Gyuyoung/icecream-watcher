@@ -26,6 +26,7 @@
 //! unmeasured node must not look the same.
 
 mod detail;
+mod graph;
 mod widgets;
 
 use std::time::{Duration, Instant};
@@ -60,8 +61,9 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
 
     // The cluster band is the first thing to go when the terminal is short:
     // without room for the table it would answer questions about rows nobody
-    // can see.
-    let band_height = if area.height >= 12 { 5 } else { 0 };
+    // can see. Given room, each series gets extra rows and its graph is drawn
+    // in braille dots, which only pay off with height (ui::graph).
+    let band_height = band_height(area.height);
     let areas = Layout::vertical([
         Constraint::Length(1),           // header
         Constraint::Length(band_height), // cluster band
@@ -195,6 +197,40 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
 
 // ---------------------------------------------------------------- cluster band
 
+/// How tall the whole band should be, borders included.
+///
+/// Progressive rather than proportional: the node table always keeps priority,
+/// so the band only grows once there is room the table does not need. The
+/// thresholds are the point at which spending three more rows still leaves a
+/// usable list.
+fn band_height(total: u16) -> u16 {
+    match total {
+        h if h >= 40 => 3 * SERIES_ROWS_LARGE as u16 + 2,
+        h if h >= 24 => 3 * SERIES_ROWS_TALL as u16 + 2,
+        h if h >= 12 => 3 + 2,
+        _ => 0,
+    }
+}
+
+/// Rows per series once the band is tall enough for dot graphs.
+const SERIES_ROWS_TALL: usize = 2;
+/// Rows per series on a large terminal.
+const SERIES_ROWS_LARGE: usize = 3;
+
+/// Width reserved for a series' label, figure and notes in the tall layout.
+///
+/// Fixed for the same reason [`BAND_VALUE_WIDTH`] is: the band exists so the
+/// three graphs can be read against each other, which a ragged left edge
+/// defeats. It is *enforced* rather than assumed — a note one character over
+/// budget would shunt its graph sideways and push the newest samples off the
+/// right-hand edge, which is both a stagger and a silent loss of exactly the
+/// data the eye goes to first.
+const BAND_LEFT: usize = 42;
+
+/// Below this the graph is too narrow to be worth the rows, so the band falls
+/// back to its compact one-line-per-series layout.
+const BAND_MIN_GRAPH: usize = 20;
+
 /// Three lines that answer the whole-cluster questions on their own.
 fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summary) {
     let block = Block::bordered().title(Span::styled(
@@ -204,15 +240,205 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Bars scale with the terminal; the right-hand notes need a fixed budget.
-    let bar_width = (inner.width as usize).saturating_sub(58).clamp(10, 40);
+    let rows = inner.height as usize / 3;
+    let graph_width = (inner.width as usize).saturating_sub(BAND_LEFT);
+    if rows >= SERIES_ROWS_TALL && graph_width >= BAND_MIN_GRAPH {
+        let mut lines = Vec::with_capacity(rows * 3);
+        lines.extend(slots_block(summary, cluster, graph_width, rows));
+        lines.extend(queue_block(cluster, summary, graph_width, rows));
+        lines.extend(rate_block(cluster, graph_width, rows));
+        frame.render_widget(Paragraph::new(lines), inner);
+        return;
+    }
 
+    // Compact: one line per series, with block sparklines. A single row of
+    // braille would be four levels, which is worse than the eight a block
+    // sparkline gives — so height, not style, decides which is drawn.
+    let bar_width = (inner.width as usize).saturating_sub(58).clamp(10, 40);
     let lines = vec![
         slots_line(summary, bar_width),
         queue_line(cluster, summary, bar_width),
         rate_line(cluster, bar_width),
     ];
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Lay one series out as a fixed-width text column beside a dot graph.
+///
+/// `text` supplies as many lines as it has to say; the graph spans every row,
+/// so the reading order is "what is it, then what has it been doing".
+fn series_block(
+    text: Vec<Vec<Span<'static>>>,
+    glyphs: Vec<String>,
+    style_for_row: impl Fn(usize) -> Style,
+    rows: usize,
+) -> Vec<Line<'static>> {
+    (0..rows)
+        .map(|r| {
+            let mut spans = fit(text.get(r).cloned().unwrap_or_default(), BAND_LEFT);
+            if let Some(glyphs) = glyphs.get(r) {
+                spans.push(Span::styled(glyphs.clone(), style_for_row(r)));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// Force a run of spans to exactly `width` characters, padding or eliding.
+///
+/// Eliding marks the cut with `…`, so a shortened note cannot be read as the
+/// whole of a shorter one — and nothing downstream of it can be displaced.
+fn fit(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+    if used == width {
+        return spans;
+    }
+    if used < width {
+        let mut spans = spans;
+        spans.push(Span::raw(" ".repeat(width - used)));
+        return spans;
+    }
+
+    let mut out = Vec::with_capacity(spans.len());
+    let mut left = width.saturating_sub(1); // room for the ellipsis
+    for span in spans {
+        let len = span.content.chars().count();
+        if len <= left {
+            left -= len;
+            out.push(span);
+            continue;
+        }
+        let kept: String = span.content.chars().take(left).collect();
+        let style = span.style;
+        out.push(Span::styled(kept, style));
+        break;
+    }
+    out.push(Span::raw("…"));
+    out
+}
+
+/// Samples for a dot graph `width` characters wide, on a fixed two-minute axis.
+fn dots(history: &icecc_model::History, width: usize) -> Vec<f32> {
+    history.stretched(width * graph::CELL_COLS)
+}
+
+/// "How many compile slots are occupied?", with its two minutes of history.
+fn slots_block(
+    summary: &Summary,
+    cluster: &Cluster,
+    width: usize,
+    rows: usize,
+) -> Vec<Line<'static>> {
+    let pct = summary.slot_usage();
+    let mut head = vec![
+        label("SLOTS"),
+        band_value(format!("{}/{}", summary.used_slots, summary.total_slots)),
+    ];
+    match pct {
+        Some(p) => head.push(Span::styled(
+            format!("{p:>3.0}%"),
+            Style::default().fg(widgets::ramp(p as f32)),
+        )),
+        None => head.push(Span::raw("  —")),
+    }
+
+    let mut health = vec![Span::styled(
+        format!("{:<7}{} online", "", summary.nodes_online),
+        Style::default().add_modifier(Modifier::DIM),
+    )];
+    if summary.nodes_metrics_stale > 0 {
+        health.push(Span::styled(
+            format!(" · {} stale", summary.nodes_metrics_stale),
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+    if summary.nodes_offline > 0 {
+        health.push(Span::styled(
+            format!(" · {} down", summary.nodes_offline),
+            Style::default().fg(Color::LightRed),
+        ));
+    }
+    if summary.nodes_without_agent > 0 {
+        health.push(Span::styled(
+            format!(" · {} no agent", summary.nodes_without_agent),
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+    }
+
+    // Utilisation has a real maximum, so the gradient by height means what it
+    // means on the bars: near the top is the part worth worrying about.
+    let glyphs = graph::area(&dots(&cluster.slots_history, width), 100.0, width, rows);
+    series_block(
+        vec![head, health],
+        glyphs,
+        |r| Style::default().fg(graph::row_colour(r, rows)),
+        rows,
+    )
+}
+
+/// "Is the scheduler queue growing?" — the shape shows it, the word says it.
+fn queue_block(
+    cluster: &Cluster,
+    summary: &Summary,
+    width: usize,
+    rows: usize,
+) -> Vec<Line<'static>> {
+    let history = &cluster.pending_history;
+    let peak = history.max().unwrap_or(1.0).max(1.0);
+    let trend = history.trend(1.5);
+    let trend_style = match trend {
+        Trend::Rising if summary.pending_jobs > 0 => Style::default().fg(Color::Yellow),
+        Trend::Falling => Style::default().fg(Color::Green),
+        _ => Style::default().add_modifier(Modifier::DIM),
+    };
+
+    let head = vec![
+        label("QUEUE"),
+        band_value(format!("{} wait", summary.pending_jobs)),
+        Span::styled(format!("{} {}", trend.arrow(), trend.label()), trend_style),
+    ];
+    let notes = vec![Span::styled(
+        format!(
+            "{:<7}peak {peak:.0} · {} remote · {} local",
+            "", summary.active_jobs, summary.local_jobs
+        ),
+        Style::default().add_modifier(Modifier::DIM),
+    )];
+
+    // Peak-scaled, so a flat colour rather than the utilisation gradient: the
+    // top of this graph is "the most we have seen", not "full".
+    let glyphs = graph::area(&dots(history, width), peak, width, rows);
+    series_block(
+        vec![head, notes],
+        glyphs,
+        |_| Style::default().fg(Color::Cyan),
+        rows,
+    )
+}
+
+/// "Is the cluster being used efficiently?" — throughput over time.
+fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>> {
+    let history = &cluster.rate_history;
+    let peak = history.max().unwrap_or(1.0).max(1.0);
+    let now = history.last().unwrap_or(0.0);
+
+    let head = vec![label("RATE"), band_value(format!("{now:.0}/s"))];
+    let notes = vec![Span::styled(
+        format!(
+            "{:<7}peak {peak:.0}/s · {} done since connect",
+            "",
+            cluster.totals.completed_remote + cluster.totals.completed_local
+        ),
+        Style::default().add_modifier(Modifier::DIM),
+    )];
+
+    let glyphs = graph::area(&dots(history, width), peak, width, rows);
+    series_block(
+        vec![head, notes],
+        glyphs,
+        |_| Style::default().fg(Color::Magenta),
+        rows,
+    )
 }
 
 /// "How many compile slots are occupied?" and "is the cluster healthy?"
@@ -966,6 +1192,83 @@ mod tests {
             .join("\n")
     }
 
+    fn is_braille(c: char) -> bool {
+        ('\u{2800}'..='\u{28FF}').contains(&c)
+    }
+
+    fn is_graph_glyph(c: char) -> bool {
+        is_braille(c) || "░█▁▂▃▄▅▆▇".contains(c)
+    }
+
+    /// The lines one band series occupies: its labelled line plus the rows
+    /// under it, up to the next series or the box edge. A tall series draws its
+    /// label on the first row and its graph across all of them, so anything
+    /// that looks at the labelled line alone misses most of the graph.
+    fn series_lines<'a>(out: &'a str, needle: &str) -> Vec<&'a str> {
+        let lines: Vec<&str> = out.lines().collect();
+        let at = lines
+            .iter()
+            .position(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle} line in:\n{out}"));
+        let mut block = vec![lines[at]];
+        for line in lines.iter().skip(at + 1) {
+            if ["SLOTS", "QUEUE", "RATE"].iter().any(|l| line.contains(l)) || line.contains('└') {
+                break;
+            }
+            block.push(line);
+        }
+        block
+    }
+
+    /// Character columns a series' graph occupies, checked across every row it
+    /// spans.
+    ///
+    /// Columns, not byte offsets: braille cells and `→` are three bytes each,
+    /// so byte positions drift between lines and would report a stagger that is
+    /// not there. Every row is checked because the rows that carry the notes
+    /// are the ones whose text can overrun its budget and shunt the graph — and
+    /// a graph shunted right loses its newest samples off the screen edge,
+    /// which is the half the eye goes to first.
+    ///
+    /// Blank braille cells count, because the question is where the graph
+    /// *area* sits, not where the data in it happens to reach.
+    fn graph_span(out: &str, needle: &str) -> (usize, usize) {
+        let mut span: Option<(usize, usize)> = None;
+        for line in series_lines(out, needle) {
+            let cols: Vec<usize> = line
+                .chars()
+                .enumerate()
+                .filter(|(_, c)| is_graph_glyph(*c))
+                .map(|(i, _)| i)
+                .collect();
+            let Some(&first) = cols.first() else { continue };
+            let here = (first, *cols.last().unwrap());
+            match span {
+                None => span = Some(here),
+                Some(seen) => assert_eq!(
+                    here, seen,
+                    "the {needle} graph is staggered between its own rows: {line}"
+                ),
+            }
+        }
+        span.unwrap_or_else(|| panic!("no graph in the {needle} block of:\n{out}"))
+    }
+
+    /// Character columns where a dot graph actually has dots, across the whole
+    /// series block and ignoring blank cells.
+    fn drawn_span(out: &str, needle: &str) -> Option<(usize, usize)> {
+        let cols: Vec<usize> = series_lines(out, needle)
+            .iter()
+            .flat_map(|line| {
+                line.chars()
+                    .enumerate()
+                    .filter(|(_, c)| is_braille(*c) && *c != '\u{2800}')
+                    .map(|(i, _)| i)
+            })
+            .collect();
+        Some((*cols.iter().min()?, *cols.iter().max()?))
+    }
+
     fn row_for<'a>(out: &'a str, name: &str) -> &'a str {
         out.lines()
             .find(|l| l.contains(name))
@@ -1366,26 +1669,72 @@ mod tests {
         for _ in 0..60 {
             app.tick_history();
         }
-        let out = render(&app, 130, 24);
-        let lines: Vec<&str> = out.lines().collect();
 
-        // Each band line is "│LABEL  figure    graph…". The graph must span the
-        // same columns on all three, or the bars cannot be compared by eye.
-        let span_of = |needle: &str| -> (usize, usize) {
-            let line = lines.iter().find(|l| l.contains(needle)).unwrap();
-            let after_label = line.find(needle).unwrap() + needle.len();
-            let glyphs: Vec<usize> = line[after_label..]
-                .char_indices()
-                .filter(|(_, c)| "░█▁▂▃▄▅▆▇".contains(*c))
-                .map(|(i, _)| after_label + i)
-                .collect();
-            assert!(!glyphs.is_empty(), "no graph on the {needle} line: {line}");
-            (*glyphs.first().unwrap(), *glyphs.last().unwrap())
+        // Both layouts: the band exists so the three series can be read against
+        // each other, which a stagger of even three columns defeats.
+        for height in [20u16, 26, 44] {
+            let out = render(&app, 130, height);
+            let slots = graph_span(&out, "SLOTS");
+            assert_eq!(
+                graph_span(&out, "QUEUE"),
+                slots,
+                "QUEUE is staggered at height {height}:\n{out}"
+            );
+            assert_eq!(
+                graph_span(&out, "RATE"),
+                slots,
+                "RATE is staggered at height {height}:\n{out}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_band_spends_rows_on_dot_graphs_only_when_there_are_rows_to_spend() {
+        let mut app = busy_cluster();
+        for _ in 0..60 {
+            app.tick_history();
+        }
+
+        // Short: block sparklines, because one row of braille is four levels —
+        // worse than the eight a block gives.
+        let short = render(&app, 130, 20);
+        assert!(
+            short.chars().any(|c| "▁▂▃▄▅▆▇█".contains(c)),
+            "expected block sparklines at height 20:\n{short}"
+        );
+        assert!(
+            !short.chars().any(is_braille),
+            "no room for dot graphs at height 20:\n{short}"
+        );
+
+        // Tall: dot graphs, and the node table still has usable rows left.
+        let tall = render(&app, 130, 30);
+        assert!(
+            tall.chars().any(is_braille),
+            "expected dot graphs at height 30:\n{tall}"
+        );
+        assert!(
+            tall.lines().filter(|l| l.contains("build0")).count() >= 3,
+            "the table must not be squeezed out by the band:\n{tall}"
+        );
+    }
+
+    #[test]
+    fn a_taller_terminal_gives_the_graphs_more_rows() {
+        let mut app = busy_cluster();
+        for _ in 0..60 {
+            app.tick_history();
+        }
+        let rows_of = |h: u16| {
+            render(&app, 130, h)
+                .lines()
+                .filter(|l| l.chars().any(is_braille))
+                .count()
         };
-
-        let slots = span_of("SLOTS");
-        assert_eq!(span_of("QUEUE"), slots, "QUEUE is staggered:\n{out}");
-        assert_eq!(span_of("RATE"), slots, "RATE is staggered:\n{out}");
+        assert!(
+            rows_of(44) > rows_of(30),
+            "a large terminal should draw taller graphs"
+        );
     }
 
     #[test]
@@ -1398,7 +1747,8 @@ mod tests {
         ));
         app.tick_history();
 
-        let out = render(&app, 130, 24);
+        // Compact layout: one block glyph, at the right-hand end.
+        let out = render(&app, 130, 20);
         let queue = out.lines().find(|l| l.contains("QUEUE")).unwrap();
         let first = queue.find('▁').expect("one sample should be drawn");
         let slots = out.lines().find(|l| l.contains("SLOTS")).unwrap();
@@ -1406,6 +1756,18 @@ mod tests {
         assert!(
             first > bar,
             "a single sample belongs at the right edge, not the left:\n{out}"
+        );
+
+        // Tall layout: the same promise, kept by the fixed time axis. One
+        // sample out of two minutes earns a sliver at the right rather than
+        // being stretched across the box as history that does not exist.
+        let out = render(&app, 130, 30);
+        let (start, end) = graph_span(&out, "QUEUE");
+        let drawn = drawn_span(&out, "QUEUE").expect("one sample should be drawn");
+        let three_quarters = start + (end - start) * 3 / 4;
+        assert!(
+            drawn.0 >= three_quarters,
+            "a single sample belongs at the right edge, not stretched:\n{out}"
         );
     }
 
@@ -1484,7 +1846,7 @@ mod tests {
         app.move_selection(1);
         app.move_selection(1);
 
-        println!("{}", render(&app, 118, 20));
+        println!("{}", render(&app, 118, 30));
 
         // …and the detail view for the node the overview points at.
         app.on_key(crate::app::Key::Enter);

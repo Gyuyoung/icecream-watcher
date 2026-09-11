@@ -846,6 +846,57 @@ against lab schedulers rather than the two-node cluster used in Phases 2–5.
 Nothing here is cluster-specific, but the Phase 5 note that the tool works on
 the real cluster has not been re-confirmed since these changes.
 
+## 8f. Dot graphs in the cluster band — **done**
+
+`btop` was the reference for *how a screen reads*, not for what to measure: the
+band still answers Icecream questions — compile slots, scheduler queue depth,
+completion rate — and per-node CPU and memory stay where Phase 4 put them, as
+supporting evidence for "which node is the bottleneck" rather than as the
+subject.
+
+What changed is resolution. A block sparkline gets eight levels out of one
+character cell; a braille cell carries two dot columns by four dot rows, so an
+`n`-row graph has `4n` levels and twice the horizontal detail. That only pays
+off with vertical room, so the band is now progressive: one line per series
+under 24 rows (block sparklines, as before), two over 24, three over 40. One row
+of braille would be *four* levels — worse than what it replaced — so height, not
+style, decides which is drawn, and the node table keeps its block sparklines.
+
+Decisions worth recording:
+
+* **The time axis is fixed at two minutes, at every width.** A wide terminal
+  draws the same window larger rather than showing more of it, so two graphs
+  side by side stay comparable and a graph does not silently change what its
+  horizontal axis means when the window is resized. `History::stretched` keeps
+  the Phase 4 promise that a young series grows in from the right: a buffer a
+  third full occupies a third of the axis, right-aligned, instead of stretching
+  a handful of samples across the box.
+* **No value is invented between samples.** Widening repeats a sample across
+  columns and narrowing averages a bucket; nothing interpolates.
+* **Colour by height, but only where height means something.** Slot occupancy
+  has a real maximum, so its gradient reads like the bars beside it. The queue
+  and rate graphs are scaled to their own peak — where the top row means "the
+  most we have seen", not "full" — so they take a flat colour instead.
+* **The left column is enforced, not assumed.** A note one character over
+  budget shunted its graph sideways and pushed the newest samples off the
+  right-hand edge — the same class of bug as the Phase 4 three-column stagger,
+  and invisible except in a rendered buffer. The column is now padded *or*
+  elided to an exact width, and the alignment test checks every row of a series
+  rather than only the row carrying its label, which is what let the first
+  version through.
+
+### What was verified, and how
+
+| Claim | Evidence |
+|---|---|
+| the glyph maths is right | dot-level tests: full is solid, a gap is blank, a measured zero draws the baseline, the area fills upward, and the two dot columns of a cell carry different samples |
+| height buys resolution | one row cannot separate 50 % from 57 %; four rows can |
+| the axis does not change with the width | a half-full buffer occupies half the axis at widths 20, 40, 100 and 250 |
+| a young graph still grows in from the right | one sample out of two minutes draws in the right-hand quarter, asserted in the rendered buffer |
+| graphs stay aligned | every row of every series asserted to occupy identical columns, at three terminal heights |
+| the fallback is by height, not by taste | block sparklines and no braille at 24 rows; braille at 30, with the node table still showing its rows |
+| it renders on a real cluster | attached to the live two-node cluster during an actual `cargo` build: slots 24/24, queue 76 and rising, 5 completions a second |
+
 ## 9. Open questions for Phase 2+
 
 - **Agent transport.** HTTP/JSON (trivially debuggable with `curl`, easy `node_exporter` parity) vs

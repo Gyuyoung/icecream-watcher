@@ -10,30 +10,53 @@ honest when the cluster or the network misbehaves. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
 
 ```
-icecream-watcher  build-master:8765  proto 43  up 04:12:07   sort name   [?] help
+icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] help
 ┌ CLUSTER ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│SLOTS  38/88     █████████████████▎░░░░░░░░░░░░░░░░░░░░░░  43%  7 online · 1 down · 1 no agent                      │
-│QUEUE  7 wait    ▁▂▂▃▅▇█▇▅▃▂▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▂▃▄▅▆▇▆▅▄▃▂▁▂▃ ↑ rising    peak 12  38 remote · 0 local                  │
-│RATE   38/s      ▃▄▅▆▇█▇▆▅▄▃▄▅▆▇█▇▆▅▄▃▂▃▄▅▆▇█▇▆▅▄▃▄▅▆▇█▇▆  peak 52/s  12843 done since connect                      │
+│SLOTS  38/88      43%                     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│       7 online · 1 down · 1 no agent     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶│
+│QUEUE  7 wait    → steady                 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│       peak 7 · 38 remote · 0 local       ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│RATE   0/s                                ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │NODE                        CPU               MEM            SLOTS      LOAD  SPEED  TEMP                           │
 │build01              ███████████▌  96%! ███████▎░░  72%  ███████▌ 15/16 14.2   3200   78°                           │
-│build02              ███████▍░░░░  61%  █████████▌  96%! █████░░░ 10/16 12.8   2900   71°                           │
-│build03              █████▊░░░░░░  48%  ████▏░░░░░  41%  ████░░░░  8/16  7.1   3100   63°                           │
-│build04              ██▋░░░░░░░░░  22%  ██▋░░░░░░░  26%  ██░░░░░░  4/16  3.4    940!  55°                           │
-│build05              ▌░░░░░░░░░░░   4%  █▊░░░░░░░░  18%  ░░░░░░░░  0/8   0.4   3050   41°                           │
+│build02              ███████▍░░░░  61%  █████████▌  96%! █████░░░ 10/16 14.2   2900   71°                           │
+│build03              █████▊░░░░░░  48%  ████▏░░░░░  41%  ████░░░░  8/16 14.2   3100   63°                           │
+│build04              ██▋░░░░░░░░░  22%  ██▋░░░░░░░  26%  ██░░░░░░  4/16 14.2    940!  55°                           │
+│build05              ▌░░░░░░░░░░░   4%  █▊░░░░░░░░  18%  ░░░░░░░░  0/8  14.2   3050   41°                           │
 │build07              ············    —  ··········    —  ░░░░░░░░  0/16    —   3000     —                           │
-│laptop local         █▌░░░░░░░░░░  12%  ██████▎░░░  62%  ▋░░░░░░░  1/12  1.9      —   52°                           │
-│build06 down         ············    —  ··········    —               —    —      —     —                           │
+│laptop local         █▌░░░░░░░░░░  12%  ██████▎░░░  62%  ▋░░░░░░░  1/12 14.2      —   52°                           │
+│build06 down 0s      ············    —  ··········    —               —    —      —     —                           │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
+│                                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-q quit  ↑↓/jk select  s sort  c m l i by cpu/mem/load/jobs  ? help   selected build02
+q quit  ↑↓/jk select  Enter detail  s sort  c m l i by cpu/mem/load/jobs  ? help   selected build02
 ```
 
 Reading it: `build01` is CPU-bound and `build02` memory-bound — the `!` says
 which, without comparing numbers. `build04` is a slow outlier. `build07` has no
-agent, so its resource cells claim nothing. `build06` has dropped out and has
-sunk to the bottom. The queue is growing, and the band says so in a word.
+agent, so its resource cells claim nothing. `build06` has dropped out, says how
+long it has been gone, and has sunk to the bottom.
+
+The band answers the whole-cluster questions before the table is read at all,
+and it answers them about **Icecream**: compile slots, scheduler queue depth and
+completion rate. Given vertical room it draws each of the three as a braille dot
+graph — one character is two dots across by four down, so a six-row band has
+twenty-four levels rather than the eight a block sparkline gets. On a short
+terminal the same three series fall back to one-line block sparklines, because a
+single row of braille would be four levels, which is worse. Each graph's axis is
+a fixed two minutes at every width, so a wide terminal draws the same window
+larger rather than showing more of it, and a monitor started ten seconds ago
+fills only the right-hand sliver it has earned.
 
 At a wide terminal each row also carries a two-minute CPU sparkline; narrower
 terminals drop whole columns rather than squeezing every bar into uselessness.
@@ -42,22 +65,23 @@ terminals drop whole columns rather than squeezing every bar into uselessness.
 deliberately leaves out:
 
 ```
-┌ build02  10.0.0.2  x86_64  proto 43 ───────────────────────────────────────────────────────────────────────────────┐
+icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] help
+┌ build02  10.0.0.2  ?  proto — ─────────────────────────────────────────────────────────────────────────────────────┐
 │  healthy                                                                                                           │
 │                                                                                                                    │
 │CPU                                                                                                                 │
-│  ████████████▎░░░░░░░  61%   8 cores  @ 3100 MHz avg                                                               │
+│  ████████████▎░░░░░░░  61%   8 cores                                                                               │
 │                                                                                                                    │
-│  C0  ██████░░  75%  C1  ████████ 100%  C2  ██████▍░  80%  C3  ██████▍░  80%  C4  █████▉░░  73%  C5  ██████▎░  78%  │
-│  C6  ██████▏░  76%  C7  ██████▏░  77%                                                                              │
+│  C0  ████▉░░░  61%  C1  ████▉░░░  61%  C2  ████▉░░░  61%  C3  ████▉░░░  61%  C4  ████▉░░░  61%  C5  ████▉░░░  61%  │
+│  C6  ████▉░░░  61%  C7  ████▉░░░  61%                                                                              │
 │                                                                                                                    │
 │    load average      14.20  12.00  9.00                                                                            │
 │    per core          1.77   (8 runnable of 500 processes)                                                          │
 │                                                                                                                    │
 │MEMORY                                                                                                              │
-│  ███████████████████▏  96%   30.1 GiB used of 31.3 GiB                                                             │
-│    available         1.2 GiB   (free 0.4 GiB, buffers 0.1 GiB, cached 0.7 GiB)                                     │
-│    swap              0 KiB of 8.0 GiB   (0%)                                                                       │
+│  ███████████████████▏  96%   955 KiB used of 1000 KiB                                                              │
+│    available         45 KiB   (free 45 KiB, buffers 0 KiB, cached 0 KiB)                                           │
+│    swap              none configured                                                                               │
 │                                                                                                                    │
 │ICECREAM                                                                                                            │
 │    compile slots     10 of 16 in use                                                                               │
