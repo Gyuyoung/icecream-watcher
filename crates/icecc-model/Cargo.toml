@@ -1,6 +1,6 @@
 [package]
 name = "icecc-model"
-description = "Cluster state and job accounting for icecc-top"
+description = "Cluster state and job accounting for icecream-watcher"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

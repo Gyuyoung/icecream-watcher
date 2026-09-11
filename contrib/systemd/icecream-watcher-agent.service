@@ -1,6 +1,6 @@
 [Unit]
-Description=icecc-top node metrics agent
-Documentation=https://github.com/gyuyoung/IceccTop
+Description=icecream-watcher node metrics agent
+Documentation=https://github.com/gyuyoung/icecream-watcher
 After=network.target
 # Not a hard dependency: the agent is useful on any host, whether or not this
 # machine also runs an Icecream daemon.
@@ -8,7 +8,7 @@ Wants=iceccd.service
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/icecc-top-agent
+ExecStart=/usr/local/bin/icecream-watcher-agent
 Restart=on-failure
 RestartSec=5s
 

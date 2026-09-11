@@ -1,4 +1,4 @@
-//! `icecc-top` — terminal monitor for an Icecream compile cluster.
+//! `icecream-watcher` — terminal monitor for an Icecream compile cluster.
 //!
 //! Phase 2: scheduler data only. See `ARCHITECTURE.md` for the roadmap and for
 //! why per-node CPU/memory needs an agent rather than the scheduler.
@@ -27,7 +27,7 @@ use crate::ui::Ui;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "icecc-top",
+    name = "icecream-watcher",
     version,
     about = "Terminal monitor for Icecream (icecc) distributed compile clusters"
 )]
@@ -65,7 +65,7 @@ struct Cli {
     #[arg(long, requires = "replay")]
     replay_realtime: bool,
 
-    /// Port each node's `icecc-top-agent` listens on.
+    /// Port each node's `icecream-watcher-agent` listens on.
     #[arg(long, value_name = "PORT", default_value_t = icecc_metrics::DEFAULT_AGENT_PORT)]
     agent_port: u16,
 
@@ -378,7 +378,7 @@ fn init_logging(cli: &Cli) -> io::Result<()> {
     use tracing_subscriber::fmt;
 
     let filter =
-        EnvFilter::try_from_env("ICECC_TOP_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
+        EnvFilter::try_from_env("ICECREAM_WATCHER_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
 
     match &cli.log_file {
         Some(path) => {

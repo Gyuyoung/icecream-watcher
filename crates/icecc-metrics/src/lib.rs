@@ -1,5 +1,5 @@
-//! The node metrics wire format, shared by `icecc-top-agent` (producer) and
-//! `icecc-top` (consumer).
+//! The node metrics wire format, shared by `icecream-watcher-agent` (producer) and
+//! `icecream-watcher` (consumer).
 //!
 //! Everything the scheduler cannot tell us lives here: CPU utilisation,
 //! per-core load, real memory totals, swap, temperature, frequency, uptime and

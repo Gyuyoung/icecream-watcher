@@ -1,4 +1,4 @@
-//! `icecc-top-agent` — serves this host's resource metrics to `icecc-top`.
+//! `icecream-watcher-agent` — serves this host's resource metrics to `icecream-watcher`.
 //!
 //! Exists because the Icecream scheduler cannot provide them: `iceccd` reports
 //! stats only when its composite load moves by ≥10 %, and even then carries no
@@ -30,9 +30,9 @@ const WARMUP: Duration = Duration::from_millis(200);
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "icecc-top-agent",
+    name = "icecream-watcher-agent",
     version,
-    about = "Serves node resource metrics to icecc-top"
+    about = "Serves node resource metrics to icecream-watcher"
 )]
 struct Cli {
     /// Address to bind. The default accepts connections from the build network;
@@ -41,12 +41,12 @@ struct Cli {
         long,
         value_name = "ADDR",
         default_value = "0.0.0.0",
-        env = "ICECC_TOP_AGENT_BIND"
+        env = "ICECREAM_WATCHER_AGENT_BIND"
     )]
     bind: IpAddr,
 
     /// Port to listen on.
-    #[arg(short, long, default_value_t = DEFAULT_AGENT_PORT, env = "ICECC_TOP_AGENT_PORT")]
+    #[arg(short, long, default_value_t = DEFAULT_AGENT_PORT, env = "ICECREAM_WATCHER_AGENT_PORT")]
     port: u16,
 
     /// Sampling interval. Rates are averaged over this window, so it also sets
@@ -65,7 +65,7 @@ async fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("ICECC_TOP_AGENT_LOG")
+            tracing_subscriber::EnvFilter::try_from_env("ICECREAM_WATCHER_AGENT_LOG")
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
@@ -99,7 +99,7 @@ async fn main() -> std::io::Result<()> {
     tokio::spawn(sample_loop(sampler, tx, interval));
 
     tracing::info!(
-        "icecc-top-agent {} serving http://{addr}{METRICS_PATH} every {:?} (read-only)",
+        "icecream-watcher-agent {} serving http://{addr}{METRICS_PATH} every {:?} (read-only)",
         env!("CARGO_PKG_VERSION"),
         interval
     );

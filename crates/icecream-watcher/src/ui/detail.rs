@@ -406,7 +406,7 @@ fn agent_lines(node: &Node) -> Vec<Line<'static>> {
         Some(res) => {
             out.push(field(
                 "version",
-                format!("icecc-top-agent {}", res.agent_version),
+                format!("icecream-watcher-agent {}", res.agent_version),
             ));
             out.push(field(
                 "sample window",
@@ -428,7 +428,7 @@ fn agent_lines(node: &Node) -> Vec<Line<'static>> {
                 Style::default().add_modifier(Modifier::DIM),
             )));
             out.push(Line::from(Span::styled(
-                "    install icecc-top-agent for CPU, memory, temperature and network",
+                "    install icecream-watcher-agent for CPU, memory, temperature and network",
                 Style::default().add_modifier(Modifier::DIM),
             )));
         }
@@ -486,7 +486,7 @@ fn note(label: &str, detail: &str) -> Line<'static> {
 
 fn unavailable() -> Line<'static> {
     Line::from(Span::styled(
-        "    not measured — needs icecc-top-agent on this node",
+        "    not measured — needs icecream-watcher-agent on this node",
         Style::default().fg(Color::DarkGray),
     ))
 }

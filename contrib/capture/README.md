@@ -4,12 +4,12 @@ Recorded scheduler streams, so protocol work does not need a live cluster.
 
 Record one:
 
-    icecc-top --scheduler build-master:8765 --record session.ictpcap
+    icecream-watcher --scheduler build-master:8765 --record session.icwcap
 
 Replay it:
 
-    icecc-top --replay session.ictpcap              # as fast as possible
-    icecc-top --replay session.ictpcap --replay-realtime   # original pacing
+    icecream-watcher --replay session.icwcap              # as fast as possible
+    icecream-watcher --replay session.icwcap --replay-realtime   # original pacing
 
 ## Format
 
@@ -17,7 +17,7 @@ Everything is big-endian. The stream stored is the post-handshake frame stream
 exactly as it arrived, so a capture is a faithful record of the wire.
 
 ```
-magic     8 bytes   "ICTPCAP1"
+magic     8 bytes   "ICWCAP01"
 protocol  u32       negotiated protocol version for the session
 repeat:
   offset  u32 x2    milliseconds since the first recorded frame (u64)
@@ -34,9 +34,9 @@ truncation point is survivable.
 
 | File | Recorded against | Contents |
 |---|---|---|
-| `lab-session.ictpcap` | `icecc-scheduler` 1.4, protocol 43, one `iceccd`, isolated netname `ICECCTOP_LAB` on port 18765 | login replay, then two live stats updates captured while CPU load was applied and released |
+| `lab-session.icwcap` | `icecc-scheduler` 1.4, protocol 43, one `iceccd`, isolated netname `ICECCTOP_LAB` on port 18765 | login replay, then two live stats updates captured while CPU load was applied and released |
 
-`lab-session.ictpcap` is the fixture behind
+`lab-session.icwcap` is the fixture behind
 `crates/icecc-proto/tests/golden.rs`. It is small on purpose and shows the two
 cases the parser must not confuse: the login replay carries identity but **no**
 `LoadAvg*`/`FreeMem`, while the later updates carry both. Keep it.

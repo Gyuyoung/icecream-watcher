@@ -99,7 +99,7 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
     let cluster = &app.cluster;
     let mut spans = vec![
         Span::styled(
-            "icecc-top",
+            "icecream-watcher",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -795,7 +795,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             "reading the screen",
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("  —            not measured; needs icecc-top-agent on that node"),
+        Line::from("  —            not measured; needs icecream-watcher-agent on that node"),
         Line::from("  !            the metric limiting this node, or a slow outlier"),
         Line::from("  dim row      idle"),
         Line::from("  SPEED        output bytes per user-second; blank until a node compiles"),
@@ -816,7 +816,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Paragraph::new(lines)
             .block(
                 Block::bordered()
-                    .title(" icecc-top help ")
+                    .title(" icecream-watcher help ")
                     .title_alignment(Alignment::Center),
             )
             .style(Style::default().bg(Color::Black)),
@@ -1103,7 +1103,7 @@ mod tests {
         let mut app = busy_cluster();
         app.show_help = true;
         let out = render(&app, 130, 30);
-        assert!(out.contains("icecc-top help"), "{out}");
+        assert!(out.contains("icecream-watcher help"), "{out}");
         assert!(out.contains("cycle sort"), "{out}");
         // The two symbols a newcomer cannot guess.
         assert!(out.contains("not measured"), "{out}");
@@ -1294,7 +1294,7 @@ mod tests {
 
     /// Renders a representative cluster, for the README screenshot. Ignored by
     /// default; run it with
-    /// `cargo test -p icecc-top screenshot -- --ignored --nocapture`
+    /// `cargo test -p icecream-watcher screenshot -- --ignored --nocapture`
     /// so the picture in the README is always real output from this code.
     #[test]
     #[ignore]

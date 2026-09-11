@@ -1,6 +1,6 @@
 [package]
-name = "icecc-agent"
-description = "Node metrics agent for icecc-top"
+name = "icecream-watcher"
+description = "Terminal monitor for Icecream (icecc) distributed compile clusters"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,14 +8,15 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "icecc-top-agent"
+name = "icecream-watcher"
 path = "src/main.rs"
 
 [dependencies]
+icecc-proto = { workspace = true }
 icecc-metrics = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "time", "signal", "sync"] }
+icecc-model = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ratatui = "0.29"
 clap = { version = "4", features = ["derive", "env"] }
-serde_json = "1"
-if-addrs = "0.13"

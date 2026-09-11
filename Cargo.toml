@@ -4,8 +4,8 @@ members = [
     "crates/icecc-proto",
     "crates/icecc-metrics",
     "crates/icecc-model",
-    "crates/icecc-agent",
-    "crates/icecc-top",
+    "crates/icecream-watcher-agent",
+    "crates/icecream-watcher",
 ]
 
 [workspace.package]
@@ -13,7 +13,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "GPL-2.0-or-later"
-repository = "https://github.com/gyuyoung/IceccTop"
+repository = "https://github.com/gyuyoung/icecream-watcher"
 
 [workspace.dependencies]
 icecc-proto = { path = "crates/icecc-proto" }

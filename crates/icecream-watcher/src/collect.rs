@@ -1,4 +1,4 @@
-//! Polls each node's `icecc-top-agent` in parallel.
+//! Polls each node's `icecream-watcher-agent` in parallel.
 //!
 //! Runs as its own task set and reports through a channel, so the render loop
 //! never touches the network. Three properties matter more than throughput:

@@ -352,8 +352,10 @@ mod tests {
 
     impl Fixture {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir()
-                .join(format!("icecc-agent-test-{name}-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!(
+                "icecream-watcher-agent-test-{name}-{}",
+                std::process::id()
+            ));
             let _ = std::fs::remove_dir_all(&dir);
             let f = Self { dir };
             f.write("proc/sys/kernel/hostname", "build01\n");

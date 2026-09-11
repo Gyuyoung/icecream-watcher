@@ -1,4 +1,4 @@
-# icecc-top — Architecture (Phase 1: Research)
+# icecream-watcher — Architecture (Phase 1: Research)
 
 Status: **Phase 1 research complete; Phases 2–5 implemented** (see §8).
 Decisions approved 2026-09-10: **Rust + ratatui/crossterm/tokio**, **Tier 0+1** collection (§4, §5).
@@ -53,7 +53,7 @@ MsgChannel *try_get_scheduler();   // poll until non-NULL or timed_out()
 **Limitation found in icecream-sundae:** `-s/--scheduler` takes a *hostname only*; the port is
 hardcoded to 8765, so it cannot attach to a scheduler on a non-default port. **[verified]** —
 `icecream-sundae -s localhost` against a scheduler on :18765 reports `Cannot get scheduler`.
-`icecc-top` will accept `host:port`.
+`icecream-watcher` will accept `host:port`.
 
 ### 1.2 The monitor handshake
 
@@ -98,7 +98,7 @@ JOB_LOCAL_DONE        -> remove(id)
 ```
 
 So *Pending / Active / IN / OUT / LOCAL* — the columns icemon and sundae display — are all
-monitor-side accumulators over this stream. `icecc-top` must reimplement the same accounting;
+monitor-side accumulators over this stream. `icecream-watcher` must reimplement the same accounting;
 there is no query API to ask the scheduler for them.
 
 **Consequence:** these counters are only correct for the lifetime of the connection. A monitor
@@ -235,7 +235,7 @@ loadavg, memory fillgrade, free memory).
 **Rejected as a polling source**, for two reasons: the output is an unstable debug format with no
 compatibility guarantee, and `internals` is implemented as a **blocking** `it->get_msg()` inside the
 scheduler's main loop (`scheduler.cpp:1704-1734`) — polling it would stall scheduling for the whole
-cluster whenever one daemon is slow to answer. It stays useful for `icecc-top --debug-dump` and for
+cluster whenever one daemon is slow to answer. It stays useful for `icecream-watcher --debug-dump` and for
 one-shot diagnostics only.
 
 ### 2.6 Reimplement or link `libicecc`?
@@ -258,7 +258,7 @@ negotiating down. Refuse to decode `MON_GET_CS` below protocol 29 (log and conti
 carrying the legacy path.
 
 **Licensing:** we derive the protocol and the job-accounting model from GPL-2.0-or-later sources.
-`icecc-top` should therefore be **GPL-2.0-or-later**.
+`icecream-watcher` should therefore be **GPL-2.0-or-later**.
 
 ---
 
@@ -313,12 +313,12 @@ Three tiers, so the tool is useful before any agent is deployed:
 | Tier | Source | Gives | Deployment |
 |---|---|---|---|
 | **0 — always on** | scheduler MON stream | topology, jobs, slots, speed, coarse load/free-mem | none |
-| **1 — recommended** | `icecc-top-agent` on each node | full 1 Hz `/proc` + `/sys` metrics | one static binary + socket unit |
+| **1 — recommended** | `icecream-watcher-agent` on each node | full 1 Hz `/proc` + `/sys` metrics | one static binary + socket unit |
 | **2 — deferred** | existing Prometheus `node_exporter` | most Tier-1 metrics | none, where already deployed |
 
 Tier 2 is **out of scope for now** and revisited only if a target cluster already runs
 `node_exporter`. Nodes without an agent still appear, with resource cells rendered as `—` and a `no-agent` badge.
-This matters: it means `icecc-top` is never worse than `icemon`, and gets better as agents roll out.
+This matters: it means `icecream-watcher` is never worse than `icemon`, and gets better as agents roll out.
 
 **Pull over push**, because: no per-node configuration (the agent never needs to know where the
 monitor is), the monitor owns its own timeouts so one hung node cannot stall anything, adding a
@@ -339,7 +339,7 @@ Agent design constraints:
 
 ```
                         ┌──────────────────────────────────────────┐
-                        │              icecc-top (TUI)             │
+                        │              icecream-watcher (TUI)             │
                         │                                          │
                         │   render thread ── 60 ms frame budget    │
                         │        ▲            reads snapshot       │
@@ -408,7 +408,7 @@ installed here, so an FTXUI build would need it or a vendored protocol layer any
 Present tense = exists today (Phase 2). Marked *(planned)* = later phases.
 
 ```
-IceccTop/
+icecream-watcher/
 ├── ARCHITECTURE.md               this document; §2 is the protocol reference
 ├── README.md
 ├── LICENSE                       GPL-2.0-or-later (§2.6)
@@ -426,11 +426,11 @@ IceccTop/
 │   │   └── src/client.rs         one GET, no HTTP stack pulled in
 │   ├── icecc-model/              Cluster, Node, job accounting, agent metrics
 │   │   └── src/history.rs        sample ring buffers and trend detection
-│   ├── icecc-agent/              icecc-top-agent
+│   ├── icecream-watcher-agent/              icecream-watcher-agent
 │   │   ├── src/parse.rs          pure /proc and /sys parsers
 │   │   ├── src/sampler.rs        sampling, deltas, sensor selection
 │   │   └── src/server.rs         single-endpoint HTTP/1.1
-│   └── icecc-top/                the TUI binary
+│   └── icecream-watcher/                the TUI binary
 │       ├── src/main.rs           CLI, runtime wiring, terminal setup
 │       ├── src/app.rs            state, key handling (sort modes: planned)
 │       ├── src/collect.rs        parallel agent polling
@@ -441,7 +441,7 @@ IceccTop/
 └── contrib/
     ├── capture/                  protocol captures + format docs
     │   ├── README.md
-    │   └── lab-session.ictpcap   golden-test fixture from a live scheduler
+    │   └── lab-session.icwcap   golden-test fixture from a live scheduler
     └── systemd/                  hardened agent unit + deployment notes
 ```
 
@@ -450,7 +450,7 @@ the authoritative, wire-verified protocol reference, and maintaining a second
 copy would only let the two drift apart. The capture file format — the one thing
 §2 does not cover — is documented in `contrib/capture/README.md`.
 
-`icecc-proto` and `icecc-agent` stay independently usable — the protocol crate is the piece most
+`icecc-proto` and `icecream-watcher-agent` stay independently usable — the protocol crate is the piece most
 likely to be valuable to other people, and keeping it UI-free keeps it honest.
 
 ---
@@ -465,7 +465,7 @@ a uniform table where every metric gets equal weight.
 Proposed overview, three bands:
 
 ```
- icecc-top   build-master:8765   proto 43   up 04:12:07                          1.0s  [?] help
+ icecream-watcher   build-master:8765   proto 43   up 04:12:07                          1.0s  [?] help
 ╭─ CLUSTER ──────────────────────────────────────────────────────────────────────────────────╮
 │  SLOTS  47/64  ███████████████████████████░░░░░░░  73%   nodes 8 online · 1 stale · 1 down │
 │  QUEUE  pending  7  ▁▂▂▃▅▇█▇▅▃▂▁▂  rising        remote 42 · local 5 · done 12843          │
@@ -535,7 +535,7 @@ and node disconnect, and idles at negligible CPU.
 |---|---|
 | framing and handshake are right | golden tests decode bytes captured from `icecc-scheduler` 1.4; live handshake negotiated protocol 43 |
 | explicit-target connect works | `--scheduler localhost:18765` against an isolated lab scheduler |
-| UDP broadcast discovery works | plain `icecc-top` found the real cluster; answers arrived from both loopback and the LAN interface and the netname filter rejected a wrong netname |
+| UDP broadcast discovery works | plain `icecream-watcher` found the real cluster; answers arrived from both loopback and the LAN interface and the netname filter rejected a wrong netname |
 | partial `MON_STATS` merge is correct | login replay (no `LoadAvg`/`FreeMem`) followed by loaded updates (both present) merges into one complete node — asserted in `golden.rs` and in the model tests |
 | reconnect is clean | killing the scheduler mid-session produced `Connection reset`, then repeated `Connection refused` retries, with no crash and no stuck UI |
 | record/replay round-trips | a captured session replays to byte-identical events |
@@ -553,8 +553,8 @@ describes.
 
 ## 8b. Phase 3 — node resource monitoring — **done**
 
-`icecc-top-agent` samples `/proc` and `/sys` once a second and serves the last
-snapshot over one `GET /metrics`; `icecc-top` polls every node at the address the
+`icecream-watcher-agent` samples `/proc` and `/sys` once a second and serves the last
+snapshot over one `GET /metrics`; `icecream-watcher` polls every node at the address the
 scheduler reported for it. Nothing is configured per node.
 
 Implemented: CPU total and per-core utilisation, per-core frequency, memory
@@ -720,7 +720,7 @@ Decisions worth recording:
 | the view carries what the overview drops | asserted against the full line list rather than one screenful, so a section scrolled below the fold still counts |
 | scrolling reaches the end | a test scrolls down and asserts the last section becomes visible |
 | unhealthy nodes lead with the problem | offline and wrong-host panels assert both the label and the explanation |
-| a node with no agent is explained, not blank | asserts the "install icecc-top-agent" line *and* that scheduler-sourced facts are still shown |
+| a node with no agent is explained, not blank | asserts the "install icecream-watcher-agent" line *and* that scheduler-sourced facts are still shown |
 | keys behave per view | `Esc` unwinds one layer at a time; arrows scroll without moving the selection; sort keys are inert |
 | any geometry and any core count | rendered from 10×3 to 200×60, and with a 64-core node whose per-core bars must not overflow the line |
 | it works on the real cluster | opened on the live Linux node: 12 per-core bars in six columns, 1699 MHz average, load 19.80 with 1.65 per core, 32.8 GiB of 62.5 GiB used, real features list |

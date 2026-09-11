@@ -1,7 +1,7 @@
 //! Golden tests against bytes captured from a real scheduler.
 //!
 //! The fixture in `contrib/capture/` was recorded with
-//! `icecc-top --scheduler localhost:18765 --record …` against
+//! `icecream-watcher --scheduler localhost:18765 --record …` against
 //! `icecc-scheduler` 1.4 (protocol 43) with one `iceccd` attached, while CPU
 //! load was applied so that a live stats update landed in the stream.
 //!
@@ -13,7 +13,7 @@ use icecc_proto::msg::{self, Event};
 use icecc_proto::stats::StatsRecord;
 use icecc_proto::wire;
 
-const CAPTURE: &[u8] = include_bytes!("../../../contrib/capture/lab-session.ictpcap");
+const CAPTURE: &[u8] = include_bytes!("../../../contrib/capture/lab-session.icwcap");
 
 /// The first bytes the live scheduler actually sent after `MON_LOGIN`, copied
 /// out of the capture. Kept inline so this test stands on its own.
@@ -47,7 +47,7 @@ fn real_frame_header_matches_our_framing_rules() {
 
 /// Decode the whole capture the way `conn::run_replay` does.
 fn decode_capture() -> (u32, Vec<Event>) {
-    assert_eq!(&CAPTURE[..8], b"ICTPCAP1", "fixture magic");
+    assert_eq!(&CAPTURE[..8], b"ICWCAP01", "fixture magic");
     let protocol = u32::from_be_bytes(CAPTURE[8..12].try_into().unwrap());
 
     let mut events = Vec::new();

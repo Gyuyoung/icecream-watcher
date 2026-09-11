@@ -85,7 +85,7 @@ async fn fetch_inner(host: &str, port: u16) -> Result<Snapshot, FetchError> {
     let request = format!(
         "GET {METRICS_PATH} HTTP/1.1\r\n\
          Host: {host}:{port}\r\n\
-         User-Agent: icecc-top/{}\r\n\
+         User-Agent: icecream-watcher/{}\r\n\
          Accept: application/json\r\n\
          Connection: close\r\n\r\n",
         env!("CARGO_PKG_VERSION")

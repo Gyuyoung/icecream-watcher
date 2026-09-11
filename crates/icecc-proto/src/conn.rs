@@ -25,7 +25,7 @@ use crate::msg::{self, Event};
 use crate::wire::{self, Handshake, MsgType, PROTOCOL_VERSION};
 
 /// Capture file magic. Bump the digit if the layout ever changes.
-const CAPTURE_MAGIC: &[u8; 8] = b"ICTPCAP1";
+const CAPTURE_MAGIC: &[u8; 8] = b"ICWCAP01";
 
 /// What the connection task reports upward.
 #[derive(Debug, Clone)]
@@ -307,7 +307,7 @@ async fn run_replay(path: &Path, realtime: bool, tx: &mpsc::Sender<Update>) -> i
     if data.len() < 12 || &data[..8] != CAPTURE_MAGIC {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "not an icecc-top capture file",
+            "not an icecream-watcher capture file",
         ));
     }
     let protocol = u32::from_be_bytes(data[8..12].try_into().unwrap());

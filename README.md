@@ -1,4 +1,4 @@
-# icecc-top
+# icecream-watcher
 
 A terminal monitor for [Icecream](https://github.com/icecc/icecream) (`icecc`)
 distributed compile clusters — the cluster equivalent of `btop`, where each
@@ -9,7 +9,7 @@ navigation and a per-node detail view. See [ARCHITECTURE.md](ARCHITECTURE.md)
 for the design and the roadmap.
 
 ```
-icecc-top  build-master:8765  proto 43  up 04:12:07   sort name   [?] help
+icecream-watcher  build-master:8765  proto 43  up 04:12:07   sort name   [?] help
 ┌ CLUSTER ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │SLOTS  38/88     █████████████████▎░░░░░░░░░░░░░░░░░░░░░░  43%  7 online · 1 down · 1 no agent                      │
 │QUEUE  7 wait    ▁▂▂▃▅▇█▇▅▃▂▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▂▃▄▅▆▇▆▅▄▃▂▁▂▃ ↑ rising    peak 12  38 remote · 0 local                  │
@@ -79,23 +79,23 @@ the scheduler protocol is implemented natively.
 
 ```sh
 cargo build --release
-./target/release/icecc-top
+./target/release/icecream-watcher
 ```
 
 For the agent, a static build is easiest to copy onto build nodes:
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl -p icecc-agent
+cargo build --release --target x86_64-unknown-linux-musl -p icecream-watcher-agent
 ```
 
 ## Use
 
 ```sh
-icecc-top                                   # discover via UDP broadcast
-icecc-top --scheduler build-master:8765     # connect directly
-icecc-top --netname MYFARM                  # discover on a named network
-ICECC_SCHEDULER=build-master:8765 icecc-top # same as --scheduler
+icecream-watcher                                   # discover via UDP broadcast
+icecream-watcher --scheduler build-master:8765     # connect directly
+icecream-watcher --netname MYFARM                  # discover on a named network
+ICECC_SCHEDULER=build-master:8765 icecream-watcher # same as --scheduler
 ```
 
 Discovery follows Icecream's own rules: an explicit `--scheduler` wins, then
@@ -122,18 +122,18 @@ Other flags:
 
 CPU, memory, temperature, frequency, swap, uptime and network throughput are not
 in the Icecream protocol at all, and what *is* there only updates when a node's
-load shifts by 10 %. They come from `icecc-top-agent`, one small read-only
+load shifts by 10 %. They come from `icecream-watcher-agent`, one small read-only
 service per build node:
 
 ```sh
 # on each build node
-icecc-top-agent            # serves http://0.0.0.0:9765/metrics, samples once a second
+icecream-watcher-agent            # serves http://0.0.0.0:9765/metrics, samples once a second
 curl -s localhost:9765/metrics | head -c 200
-icecc-top-agent --once     # print one snapshot and exit
+icecream-watcher-agent --once     # print one snapshot and exit
 ```
 
 See [contrib/systemd/](contrib/systemd/) for a hardened unit file and deployment
-notes. `icecc-top` finds agents by itself — it polls each node at the address the
+notes. `icecream-watcher` finds agents by itself — it polls each node at the address the
 scheduler reports, so there is nothing to configure per node.
 
 Nodes without an agent still appear, with their resource cells reading `—`; the
@@ -198,7 +198,7 @@ The first connection to an **idle** scheduler can take up to ~36 seconds. That
 is upstream behaviour, not a hang: the scheduler stops polling its listen socket
 for a second after each accept, then blocks in `poll()` for up to
 `MAX_SCHEDULER_PING`, and with no daemons attached nothing wakes it. Once
-daemons are connected the handshake is immediate. `icecc-top` shows
+daemons are connected the handshake is immediate. `icecream-watcher` shows
 `handshaking…` while it waits and defaults `--handshake-timeout` to 45 s;
 lowering it will make idle clusters look dead.
 
@@ -209,8 +209,8 @@ lowering it will make idle clusters look dead.
 | `crates/icecc-proto` | the scheduler monitor protocol: framing, handshake, message decoders, discovery. No UI. |
 | `crates/icecc-metrics` | the node metrics wire format, plus a minimal client |
 | `crates/icecc-model` | cluster state, job accounting, agent metrics |
-| `crates/icecc-agent` | `icecc-top-agent`: `/proc` and `/sys` sampling and serving |
-| `crates/icecc-top` | the TUI |
+| `crates/icecream-watcher-agent` | `icecream-watcher-agent`: `/proc` and `/sys` sampling and serving |
+| `crates/icecream-watcher` | the TUI |
 
 `icecc-proto` is deliberately independent of the rest and is the piece most
 likely to be useful to other tools.
@@ -222,7 +222,7 @@ cargo test
 ```
 
 The screenshot above is real output from the renderer, not a mock-up; regenerate
-it with `cargo test -p icecc-top screenshot -- --ignored --nocapture`.
+it with `cargo test -p icecream-watcher screenshot -- --ignored --nocapture`.
 
 Protocol tests run against bytes captured from a real scheduler
 (`contrib/capture/`), so they need no cluster — see

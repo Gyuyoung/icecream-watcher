@@ -1,6 +1,6 @@
 [package]
 name = "icecc-metrics"
-description = "Node metrics wire format shared by icecc-top and icecc-top-agent"
+description = "Node metrics wire format shared by icecream-watcher and icecream-watcher-agent"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
