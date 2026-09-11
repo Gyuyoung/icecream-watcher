@@ -685,7 +685,7 @@ fn columns(width: u16) -> Columns {
     cols
 }
 
-/// Width of the `ACTIVE` and `MAX` job-count columns.
+/// Width of the `MAX` and `ACTIVE` job-count columns.
 const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 6;
 const LOAD_WIDTH: u16 = 5;
@@ -709,12 +709,12 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.cur_max {
         header.push(Cell::from(format!(
             "{:>width$}",
-            "ACTIVE",
+            "MAX",
             width = COUNT_WIDTH as usize
         )));
         header.push(Cell::from(format!(
             "{:>width$}",
-            "MAX",
+            "ACTIVE",
             width = COUNT_WIDTH as usize
         )));
     }
@@ -798,8 +798,8 @@ fn node_row<'a>(
     let mut cells = vec![Cell::from(name_cell(node, stale, cols.name as usize))];
     if cols.cur_max {
         let w = COUNT_WIDTH as usize;
-        cells.push(Cell::from(count_cell(node, u64::from(node.current_jobs()), w)));
         cells.push(Cell::from(count_cell(node, u64::from(node.max_jobs()), w)));
+        cells.push(Cell::from(count_cell(node, u64::from(node.current_jobs()), w)));
     }
     cells.push(Cell::from(slots_cell(node, cluster, cols.slot_bar)));
 
@@ -1091,8 +1091,8 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
         Span::styled(" detail  ", dim),
         Span::styled("s", key),
         Span::styled(" sort  ", dim),
-        Span::styled("c m l i", key),
-        Span::styled(" by cpu/mem/load/jobs  ", dim),
+        Span::styled("n i l p", key),
+        Span::styled(" by name/jobs/load/speed  ", dim),
         Span::styled("?", key),
         Span::styled(" help", dim),
     ];
@@ -1122,7 +1122,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Esc          close this, leave the detail view, or quit"),
         Line::from("  r            redraw; while disconnected, retry now"),
         Line::from("  s            cycle sort"),
-        Line::from("  c / m / l / i  sort by cpu / mem / load / jobs"),
+        Line::from("  n / i / l / p  sort by name / jobs / load / speed"),
         Line::from("  ?            toggle this help"),
         Line::from(""),
         Line::from(Span::styled(
@@ -1347,7 +1347,7 @@ mod tests {
             .collect()
     }
 
-    /// The two figures immediately left of the meter: ACTIVE and MAX. Read by
+    /// The two figures immediately left of the meter: MAX and ACTIVE. Read by
     /// position rather than by exact spacing, so a column width change is not a
     /// test failure.
     fn counts_before_meter(row: &str) -> Vec<String> {
@@ -1465,7 +1465,7 @@ mod tests {
         let row = row_for(&out, "build01");
         // One slot busy, the rest drawn but free, and the figures beside them.
         assert_eq!(slot_meter(row), "⣇⣀⣀⣀⣀⣀⣀⣀", "{row}");
-        assert_eq!(counts_before_meter(row), ["1", "8"], "ACTIVE and MAX: {row}");
+        assert_eq!(counts_before_meter(row), ["8", "1"], "MAX and ACTIVE: {row}");
     }
 
     #[test]
@@ -1558,19 +1558,19 @@ mod tests {
         let out = render(&app, 130, 24);
         let row = row_for(&out, "big");
         assert!(row.contains('⣿'), "expected a proportional bar: {row}");
-        assert_eq!(counts_before_meter(row), ["64", "128"], "{row}");
+        assert_eq!(counts_before_meter(row), ["128", "64"], "{row}");
     }
 
     #[test]
-    fn active_and_max_are_plain_numbers_beside_the_meter() {
+    fn max_and_active_are_plain_numbers_beside_the_meter() {
         let out = render(&busy_cluster(), 130, 24);
         let header = out.lines().find(|l| l.contains("NODE")).unwrap();
-        let active = header.find("ACTIVE").expect("ACTIVE column");
         let max = header.find("MAX").expect("MAX column");
+        let active = header.find("ACTIVE").expect("ACTIVE column");
         let jobs = header.find("JOBS").expect("JOBS column");
         assert!(
-            active < max && max < jobs,
-            "order should read ACTIVE MAX JOBS: {header}"
+            max < active && active < jobs,
+            "order should read MAX ACTIVE JOBS: {header}"
         );
     }
 
@@ -1647,7 +1647,7 @@ mod tests {
             .lines()
             .find(|l| l.contains("NODE"))
             .expect("header row");
-        for icecream in ["ACTIVE", "MAX", "JOBS", "IN", "OUT", "LOAD", "SPEED"] {
+        for icecream in ["MAX", "ACTIVE", "JOBS", "IN", "OUT", "LOAD", "SPEED"] {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
@@ -1751,9 +1751,9 @@ mod tests {
     #[test]
     fn the_sort_key_is_shown_so_the_order_is_never_a_mystery() {
         let mut app = busy_cluster();
-        app.set_sort(crate::app::SortKey::Mem);
+        app.set_sort(crate::app::SortKey::Load);
         let out = render(&app, 130, 24);
-        assert!(out.contains("sort mem"), "{out}");
+        assert!(out.contains("sort load"), "{out}");
     }
 
     #[test]
@@ -2534,7 +2534,7 @@ mod tests {
         detail_of(&mut app, "build01");
         let before = app.sort;
         app.on_key(crate::app::Key::CycleSort);
-        app.on_key(crate::app::Key::Sort(crate::app::SortKey::Mem));
+        app.on_key(crate::app::Key::Sort(crate::app::SortKey::Load));
         assert_eq!(app.sort, before, "a hidden list must not reorder silently");
     }
 
@@ -2543,7 +2543,7 @@ mod tests {
         let mut app = busy_cluster();
         let out = detail_of(&mut app, "build01");
         assert!(out.contains("Esc") && out.contains("scroll"), "{out}");
-        assert!(!out.contains("by cpu/mem/load/jobs"), "{out}");
+        assert!(!out.contains("by name/jobs/load/speed"), "{out}");
     }
 
     #[test]

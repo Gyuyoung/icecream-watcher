@@ -15,41 +15,38 @@ pub const FRAME_INTERVAL: Duration = Duration::from_millis(100);
 pub const HISTORY_INTERVAL: Duration = Duration::from_secs(1);
 
 /// What the node table is ordered by.
+///
+/// Icecream figures only, matching the table. Sorting by a node's CPU or memory
+/// was dropped with the columns that showed them: a list that reorders itself
+/// by a number the reader cannot see is worse than one that offers fewer ways
+/// to order it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortKey {
     Name,
-    Cpu,
-    Mem,
-    Load,
     /// Icecream compile slots in use.
     Jobs,
+    /// The scheduler's placement weight, not CPU utilisation.
+    Load,
     Speed,
-    Temp,
 }
 
 impl SortKey {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Name => "name",
-            Self::Cpu => "cpu",
-            Self::Mem => "mem",
-            Self::Load => "load",
             Self::Jobs => "jobs",
+            Self::Load => "load",
             Self::Speed => "speed",
-            Self::Temp => "temp",
         }
     }
 
     /// Order for the `s` key to cycle through.
     pub fn next(&self) -> Self {
         match self {
-            Self::Name => Self::Cpu,
-            Self::Cpu => Self::Mem,
-            Self::Mem => Self::Load,
-            Self::Load => Self::Jobs,
-            Self::Jobs => Self::Speed,
-            Self::Speed => Self::Temp,
-            Self::Temp => Self::Name,
+            Self::Name => Self::Jobs,
+            Self::Jobs => Self::Load,
+            Self::Load => Self::Speed,
+            Self::Speed => Self::Name,
         }
     }
 
@@ -294,12 +291,10 @@ impl App {
 fn compare(a: &Node, b: &Node, key: SortKey) -> Ordering {
     let ordering = match key {
         SortKey::Name => return a.name().cmp(b.name()),
-        SortKey::Cpu => opt_cmp(a.cpu_pct(), b.cpu_pct()),
-        SortKey::Mem => opt_cmp(a.mem_pct(), b.mem_pct()),
-        SortKey::Load => opt_cmp(a.load_avg_1(), b.load_avg_1()),
         SortKey::Jobs => opt_cmp(a.slot_pct(), b.slot_pct()),
+        // The scheduler's own figure, so the order matches the LOAD column.
+        SortKey::Load => opt_cmp(a.stats.load, b.stats.load),
         SortKey::Speed => opt_cmp(a.speed(), b.speed()),
-        SortKey::Temp => opt_cmp(a.temp_c(), b.temp_c()),
     };
     match ordering {
         // Unmeasured nodes stay at the bottom instead of being flipped to the
@@ -363,10 +358,11 @@ pub fn classify(
         (KeyCode::Enter, _) => Key::Enter,
         (KeyCode::Char('r'), _) => Key::Refresh,
         (KeyCode::Char('s'), _) => Key::CycleSort,
-        (KeyCode::Char('c'), _) => Key::Sort(SortKey::Cpu),
-        (KeyCode::Char('m'), _) => Key::Sort(SortKey::Mem),
-        (KeyCode::Char('l'), _) => Key::Sort(SortKey::Load),
+        (KeyCode::Char('n'), _) => Key::Sort(SortKey::Name),
         (KeyCode::Char('i'), _) => Key::Sort(SortKey::Jobs),
+        (KeyCode::Char('l'), _) => Key::Sort(SortKey::Load),
+        // `p` because `s` already cycles the sort.
+        (KeyCode::Char('p'), _) => Key::Sort(SortKey::Speed),
         (KeyCode::Char('?'), _) => Key::ToggleHelp,
         _ => Key::Ignored,
     }
@@ -446,15 +442,15 @@ mod tests {
         app.apply(connected());
         app.apply(stats(
             1,
-            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nSpeed:3000\n",
+            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nSpeed:3000\nLoad:200\n",
         ));
         app.apply(stats(
             2,
-            "Name:build02\nIP:10.0.0.2\nMaxJobs:8\nSpeed:1000\n",
+            "Name:build02\nIP:10.0.0.2\nMaxJobs:8\nSpeed:1000\nLoad:900\n",
         ));
         app.apply(stats(
             3,
-            "Name:build03\nIP:10.0.0.3\nMaxJobs:8\nSpeed:2000\n",
+            "Name:build03\nIP:10.0.0.3\nMaxJobs:8\nSpeed:2000\nLoad:500\n",
         ));
         app.apply_resource(1, ResourceResult::Ok(snapshot("build01", 20.0, 300, 50.0)));
         app.apply_resource(2, ResourceResult::Ok(snapshot("build02", 90.0, 100, 80.0)));
@@ -479,17 +475,24 @@ mod tests {
     fn metric_sorts_put_the_busiest_first() {
         let mut app = app_with_three();
 
-        app.set_sort(SortKey::Cpu);
-        assert_eq!(names(&app), ["build02", "build03", "build01"]);
-
-        app.set_sort(SortKey::Mem);
-        assert_eq!(names(&app), ["build03", "build01", "build02"]);
-
-        app.set_sort(SortKey::Temp);
+        app.set_sort(SortKey::Load);
         assert_eq!(names(&app), ["build02", "build03", "build01"]);
 
         app.set_sort(SortKey::Speed);
         assert_eq!(names(&app), ["build01", "build03", "build02"]);
+    }
+
+    #[test]
+    fn sorting_offers_only_figures_the_table_shows() {
+        // A list that reorders itself by a number the reader cannot see is
+        // worse than one with fewer ways to order it. CPU and memory left the
+        // table, so they left the sort keys with it.
+        let mut seen = vec![SortKey::Name];
+        while seen.last().unwrap().next() != SortKey::Name {
+            seen.push(seen.last().unwrap().next());
+        }
+        let labels: Vec<&str> = seen.iter().map(|k| k.label()).collect();
+        assert_eq!(labels, ["name", "jobs", "load", "speed"]);
     }
 
     #[test]
@@ -507,12 +510,12 @@ mod tests {
     #[test]
     fn nodes_without_metrics_sort_last_not_first() {
         let mut app = app_with_three();
-        app.apply(stats(4, "Name:build04\nIP:10.0.0.4\nMaxJobs:8\n")); // no agent
-        app.set_sort(SortKey::Cpu);
+        app.apply(stats(4, "Name:build04\nIP:10.0.0.4\nMaxJobs:8\n")); // no speed yet
+        app.set_sort(SortKey::Speed);
         assert_eq!(
             names(&app).last().unwrap(),
             "build04",
-            "an unmeasured node must not top a busiest-first sort"
+            "a node with no measurement must not top a busiest-first sort"
         );
     }
 
@@ -520,7 +523,7 @@ mod tests {
     fn offline_nodes_sink_below_live_ones() {
         let mut app = app_with_three();
         app.apply(stats(2, "State:Offline\n")); // the busiest node
-        app.set_sort(SortKey::Cpu);
+        app.set_sort(SortKey::Load);
         assert_eq!(names(&app).last().unwrap(), "build02");
     }
 
@@ -528,11 +531,11 @@ mod tests {
     fn cycling_sort_visits_every_key_and_returns() {
         let mut app = App::new();
         let mut seen = vec![app.sort];
-        for _ in 0..6 {
+        for _ in 0..3 {
             app.on_key(Key::CycleSort);
             seen.push(app.sort);
         }
-        assert_eq!(seen.len(), 7);
+        assert_eq!(seen, [SortKey::Name, SortKey::Jobs, SortKey::Load, SortKey::Speed]);
         app.on_key(Key::CycleSort);
         assert_eq!(app.sort, SortKey::Name, "cycle should wrap");
     }
@@ -568,9 +571,9 @@ mod tests {
     #[test]
     fn selection_follows_the_node_through_a_re_sort() {
         let mut app = app_with_three();
-        app.on_key(Key::Down); // build01, the least busy
+        app.on_key(Key::Down); // build01, the least loaded
         let picked = app.selected;
-        app.set_sort(SortKey::Cpu);
+        app.set_sort(SortKey::Load);
         assert_eq!(app.selected, picked, "selection must track the node");
         assert_eq!(app.selected_index(), Some(2), "which is now last");
     }
@@ -624,25 +627,27 @@ mod tests {
         assert_eq!(classify(KeyCode::Enter, n), Key::Enter);
         assert_eq!(classify(KeyCode::Char('r'), n), Key::Refresh);
         assert_eq!(classify(KeyCode::Char('s'), n), Key::CycleSort);
-        assert_eq!(classify(KeyCode::Char('c'), n), Key::Sort(SortKey::Cpu));
-        assert_eq!(classify(KeyCode::Char('m'), n), Key::Sort(SortKey::Mem));
-        assert_eq!(classify(KeyCode::Char('l'), n), Key::Sort(SortKey::Load));
+        assert_eq!(classify(KeyCode::Char('n'), n), Key::Sort(SortKey::Name));
         assert_eq!(classify(KeyCode::Char('i'), n), Key::Sort(SortKey::Jobs));
+        assert_eq!(classify(KeyCode::Char('l'), n), Key::Sort(SortKey::Load));
+        assert_eq!(classify(KeyCode::Char('p'), n), Key::Sort(SortKey::Speed));
+        // Freed when CPU and memory sorting went; they must do nothing rather
+        // than quietly reorder by something invisible.
+        assert_eq!(classify(KeyCode::Char('c'), n), Key::Ignored);
+        assert_eq!(classify(KeyCode::Char('m'), n), Key::Ignored);
         assert_eq!(classify(KeyCode::Char('?'), n), Key::ToggleHelp);
         assert_eq!(classify(KeyCode::Char('z'), n), Key::Ignored);
     }
 
     #[test]
-    fn ctrl_c_quits_but_a_bare_c_sorts() {
-        // The two must not be confused: one ends the session, one reorders.
+    fn ctrl_c_quits_but_a_bare_c_does_nothing() {
+        // The two must not be confused: one ends the session, the other is now
+        // an unbound key and must stay harmless.
         assert_eq!(
             classify(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Key::Quit
         );
-        assert_eq!(
-            classify(KeyCode::Char('c'), KeyModifiers::NONE),
-            Key::Sort(SortKey::Cpu)
-        );
+        assert_eq!(classify(KeyCode::Char('c'), KeyModifiers::NONE), Key::Ignored);
     }
 
     #[test]
@@ -659,7 +664,7 @@ mod tests {
             Key::Down,
             Key::Up,
             Key::CycleSort,
-            Key::Sort(SortKey::Mem),
+            Key::Sort(SortKey::Load),
             Key::ToggleHelp,
             Key::Refresh,
         ] {

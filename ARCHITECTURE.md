@@ -1032,6 +1032,28 @@ The note explaining the memory unit was written long enough to be **truncated at
 the panel edge** — found by asserting on the rendered buffer, which is the only
 place that kind of mistake shows up.
 
+## 8h. Sorting, reduced to what is on screen — **done**
+
+The original brief fixed the sort keys as `c`, `m`, `l`, `i` — CPU, memory,
+load, Icecream jobs. Two of those now sort by numbers that appear nowhere on the
+table, which makes a keypress reorder the list for a reason the reader cannot
+see. The keys are therefore `name`, `jobs`, `load` and `speed`, bound to
+`n`, `i`, `l`, `p` (`s` was already the cycle, so speed could not have it), and
+`c` and `m` are unbound rather than repurposed — a key that used to do one thing
+and silently does another is worse than one that does nothing.
+
+`LOAD` now sorts on the scheduler's own `Load` figure rather than on the load
+average, so the order matches the column beside it.
+
+This is a deliberate deviation from §14's key list, made after the table stopped
+carrying machine metrics; `?` and the footer list only the keys that work.
+
+| Claim | Evidence |
+|---|---|
+| the cycle visits exactly the four | asserted by walking `next()` until it wraps and comparing the labels |
+| the freed keys are inert | `c` and `m` classify as `Ignored`, and `Ctrl-C` still quits |
+| the order matches the column | load sorting asserted against the scheduler's figure, not the load average |
+
 ## 9. Open questions for Phase 2+
 
 - **Agent transport.** HTTP/JSON (trivially debuggable with `curl`, easy `node_exporter` parity) vs

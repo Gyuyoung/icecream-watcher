@@ -20,14 +20,14 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                                   ACTIVE    MAX JOBS                 IN    OUT LOAD  SPEED  JOBS 2min          │
-│build01 cpu!                               15     16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02 mem!                               10     16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
-│build03                                     8     16 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
-│build04                                     4     16 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      4      9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build05                                     0      8 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build07                                     0     16 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│laptop local                                1     12 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│NODE                                      MAX ACTIVE JOBS                 IN    OUT LOAD  SPEED  JOBS 2min          │
+│build01 cpu!                               16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02 mem!                               16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build03                                    16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
+│build04                                    16      4 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      4      9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build05                                     8      0 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build07                                    16      0 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│laptop local                               12      1 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
 │build06 down 0s                             —      —                       —      —    —      —                     │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -39,7 +39,7 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │                                                                                                                    │
 │                                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-q quit  ↑↓/jk select  Enter detail  s sort  c m l i by cpu/mem/load/jobs  ? help   selected build02
+q quit  ↑↓/jk select  Enter detail  s sort  n i l p by name/jobs/load/speed  ? help   selected build02
 ```
 
 Reading it: every column is an **Icecream** figure — compile slots, jobs
@@ -52,7 +52,7 @@ and the `!` on its speed says so. `build07` has no agent, so only its load is
 unknown; everything else came from the scheduler. `build06` has dropped out, says
 how long it has been gone, and has sunk to the bottom.
 
-`ACTIVE` and `MAX` carry the job counts as plain numbers, and the `JOBS` meter
+`MAX` and `ACTIVE` carry the job counts as plain numbers, and the `JOBS` meter
 beside them gives **one cell per slot**, so slots can be counted rather than
 estimated.
 A busy slot is a filled dot-column with the baseline carrying on to its right —
@@ -209,13 +209,16 @@ off entirely.
 | `↑` / `k`, `↓` / `j` | move the selection, or scroll the detail view |
 | `PgUp` / `PgDn` | move or scroll ten rows |
 | `s` | cycle the sort key |
-| `c`, `m`, `l`, `i` | sort by CPU, memory, load, Icecream jobs |
+| `n`, `i`, `l`, `p` | sort by name, jobs, load, speed |
 | `r` | redraw; while disconnected, retry the connection now |
 | `?` | help |
 | `Enter` | open or close the node detail view |
 
-Metric sorts put the busiest node first, since the reason to sort by CPU is to
-see what is hot. Nodes with no measurement sort last rather than being flipped
+Only Icecream figures can be sorted on: sorting by a node's CPU or memory went
+with the columns that showed them, because a list that reorders itself by a
+number the reader cannot see is worse than one with fewer orderings. Metric
+sorts put the busiest node first, since the reason to sort by load is to see
+what is loaded. Nodes with no measurement sort last rather than being flipped
 to the top, and offline nodes always sink below live ones. The selection follows
 its node through a re-sort.
 
