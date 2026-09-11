@@ -20,9 +20,13 @@
 //!
 //! # async fn demo() {
 //! let discovery = discover::resolve(Some("build-master:8765"), None);
-//! let mut rx = conn::spawn(conn::Source::Live(discovery), conn::Options::default());
+//! // `retry` cuts the reconnect backoff short; drop it if you never need to.
+//! let (mut rx, retry) = conn::spawn(conn::Source::Live(discovery), conn::Options::default());
 //! while let Some(update) = rx.recv().await {
 //!     println!("{update:?}");
+//!     if matches!(update, conn::Update::Disconnected { .. }) {
+//!         retry.now();
+//!     }
 //! }
 //! # }
 //! ```
@@ -33,7 +37,7 @@ pub mod msg;
 pub mod stats;
 pub mod wire;
 
-pub use conn::{Options, Source, Update};
+pub use conn::{Options, Retry, Source, Update};
 pub use discover::{Discovery, SchedulerTarget};
 pub use msg::{Event, JobDone};
 pub use stats::StatsRecord;

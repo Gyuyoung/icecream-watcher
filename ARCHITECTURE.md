@@ -1,6 +1,6 @@
 # icecream-watcher — Architecture (Phase 1: Research)
 
-Status: **Phase 1 research complete; Phases 2–5 implemented** (see §8).
+Status: **Phase 1 research complete; Phases 2–6 implemented** (see §8).
 Decisions approved 2026-09-10: **Rust + ratatui/crossterm/tokio**, **Tier 0+1** collection (§4, §5).
 Target: a btop-class TUI for monitoring an Icecream (icecc) distributed compile cluster.
 
@@ -728,6 +728,124 @@ Decisions worth recording:
 A label longer than its column ran straight into its value (`queued from here0`)
 — found by looking at the rendered output, not the code, and now guarded by a test.
 
+## 8e. Phase 6 — robustness — **done**
+
+Earlier phases made the tool correct while things work. This one is about what
+it does when they do not, and it started by looking for the places where the
+existing code was quietly wrong rather than by adding features.
+
+The governing idea: **a monitor is a long-running process fed by a remote one**,
+so every collection it keeps needs a bound that does not depend on the remote
+behaving, and every "everything is fine" on screen has to be something it
+actually checked.
+
+### The frozen screen
+
+The worst failure this tool can have is not a crash — it is displaying a
+plausible cluster that stopped being true. Scheduler stats are change-driven
+(§2.3), so an idle cluster and a severed link produce the same thing: nothing.
+The application protocol cannot tell them apart, and nothing else was watching.
+
+`SO_KEEPALIVE` with a 20 s idle time, 5 s probes and 3 retries closes that gap
+at the only layer that can see it. The header additionally names silence
+(`quiet 5m`) once it passes a minute, so a quiet cluster reads as quiet rather
+than as unknown.
+
+### Reconnection
+
+The old behaviour was a fixed 2 s retry, forever — which against a dead
+scheduler with broadcast discovery means a packet storm all night. It now backs
+off 1, 2, 4 … to 30 s.
+
+Backoff has a cost: a scheduler that comes back can go unnoticed for a whole
+cap. Two things pay it off. A session that *reached login* resets the counter,
+so a restart is picked up at once and only a genuinely absent scheduler is
+backed off; and `r` cuts the wait short, which is what makes an aggressive cap
+safe to ship. The header shows the countdown and the attempt number, because a
+screen that says only "disconnected" gives no sign that anything is still being
+tried.
+
+### Bounded state
+
+`MON_GET_CS` and `MON_JOB_BEGIN` put a job in the model and `MON_JOB_DONE`
+takes it out — but nothing guarantees the third message. Upstream's
+`handle_job_done` returns without notifying monitors when it cannot find the
+job, and its cancellation lookup (`scheduler.cpp`, the `unknown_job_client_id`
+branch) only matches jobs that have not been assigned yet, so a cancellation
+racing with scheduling is a job whose end no monitor ever hears. The cost is not
+mainly memory: a stuck pending job inflates the queue depth **for the rest of
+the session**, and "is the queue growing?" is one of the nine questions this UI
+exists to answer.
+
+Jobs therefore expire, generously (30 minutes) and visibly — the count is kept
+in `totals.expired_jobs` and logged with the job's name. Generous because
+expiring early *understates* the queue, which is exactly as wrong as
+overstating it, and a saturated cluster can legitimately keep a job queued for a
+long time. Expiry also releases the node's slot, or one wrong number would just
+be swapped for another. It runs before the history sample is taken, so the tick
+that corrects a figure does not also record the stale one.
+
+Offline nodes keep their row by default — "which node just died" is the point
+of showing it — but now carry `offline_since`, so a row says `down 12m` rather
+than just `down`. `--forget-offline` drops them for anyone running for days.
+
+### The busy-spin
+
+A closed `mpsc::Receiver` returns `None` immediately and forever. The agent
+collector's `select!` branch ignored `None`, so if that task ever stopped, the
+branch was permanently ready and the render loop would spin at 100 % CPU — on
+the build machine the whole tool exists to stay out of the way of. Measured at
+**82,688 wakeups in 100 ms** before the fix. The branch now retires itself.
+
+Reachable only if the collector task dies, which nothing in the current code
+does deliberately; it is fixed because the consequence is severe and the cost of
+the guard is three lines, and because a regression test that could not fail
+would have been worthless.
+
+### Also covered
+
+* **Clock changes** — audited rather than changed. Every staleness, uptime and
+  retention decision reads the monotonic clock; the only wall-clock value in the
+  system is the agent's `sampled_unix_ms`, which is reported and never used for
+  staleness. NTP stepping the clock cannot age a node out or freeze a graph.
+* **A different scheduler answering discovery** — the header says
+  `⇄ moved from <old>`, judged against the *first* scheduler of the session so
+  bouncing A → B → A is not reported as a move. Without it the whole screen
+  silently changes which cluster it describes.
+* **Degenerate geometry** — 0×0, 1×1, 0×40 and 40×0 are now in the render tests,
+  because a terminal can report zero during a resize and a panic there leaves
+  the user in a raw-mode alternate screen.
+
+### What was verified, and how
+
+Failure injection ran against an isolated lab (unique netname, non-default
+ports); the partition test ran inside a private network namespace created with
+`unshare -rn`, so the packet filtering could not touch anything on the machine.
+
+| Claim | Evidence |
+|---|---|
+| a severed link is noticed | packets dropped mid-session in a private netns: `Connection timed out (os error 110)` **35 s** after the cut, matching 20 s + 3 × 5 s |
+| …and would not be without keepalive | same test with the call removed: still "connected" after **101 s**; the system default `tcp_keepalive_time` is 7200, and `SO_KEEPALIVE` is off unless set, so the true answer is "not until a write fails" |
+| backoff grows and caps | measured gaps of 1, 2, 4, 8, 16, 30, 30 s — **7 attempts in 70 s** where the old fixed delay would have made 35 |
+| a restarted scheduler is picked up at once | lab scheduler killed and replaced: disconnect seen in **0 s** (a clean FIN needs no keepalive), reconnect **1 s** later, because a session that reached login resets the backoff |
+| a departing node is marked, not dropped | lab daemon killed: scheduler sent `State:Offline`, the row kept its place and started counting downtime |
+| the spin is real and the fix works | the regression test records **82,688** wakeups in 100 ms against the old code and 0 against the new |
+| jobs cannot accumulate | 20,000 full job lifecycles leave an empty map; a job with no end expires, is counted, and releases its slot |
+| expiry cannot be silent or early | asserted on `totals.expired_jobs`, on the history sample taken after expiry, and that a job inside its timeout is untouched |
+| a move is reported, a bounce is not | asserted against the first scheduler of the session, not the previous one |
+| keepalive is really set | socket options read back from the kernel, not inferred from the call returning `Ok` |
+| it still costs nothing | 30 s attached to a lab cluster: **0.0 % CPU, 4.27 MiB RSS**, unchanged from Phase 3 |
+
+257 tests, `cargo clippy --all-targets` clean.
+
+### Not verified
+
+The live cluster on this machine had no scheduler running at the time of this
+work (`iceccd` was up, nothing on 8765), so everything above was verified
+against lab schedulers rather than the two-node cluster used in Phases 2–5.
+Nothing here is cluster-specific, but the Phase 5 note that the tool works on
+the real cluster has not been re-confirmed since these changes.
+
 ## 9. Open questions for Phase 2+
 
 - **Agent transport.** HTTP/JSON (trivially debuggable with `curl`, easy `node_exporter` parity) vs
@@ -745,5 +863,9 @@ A label longer than its column ran straight into its value (`queued from here0`)
   rendering it**, and probably prefer the agent's own `/proc/meminfo` reading over the scheduler's
   value wherever an agent exists. (Not traced to a specific upstream cause; no shell on that node.)
 - **Upstream contribution.** §2.4 (36 s accept latency on an idle scheduler) and icecream-sundae's
-  hardcoded port are both worth reporting upstream regardless of what we build.
+  hardcoded port are both worth reporting upstream regardless of what we build. Phase 6 adds a
+  third: `handle_job_done` returns without `notify_monitors` when it cannot find the job, and the
+  cancellation lookup only matches unassigned jobs, so a cancellation racing with scheduling leaves
+  every monitor holding a job it is never told the end of. Worth reporting; we work around it with
+  expiry (§8e).
 ```

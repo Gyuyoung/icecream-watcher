@@ -147,12 +147,42 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
+/// A duration at a glance: one unit, no padding.
+///
+/// `HH:MM:SS` is right where figures are read against each other or against a
+/// clock, but a badge inside a node's name column is neither — there it is
+/// thirteen cells spent on precision nobody needs, taken from the hostname.
+/// "roughly an hour" is the whole message.
+pub fn brief_duration(secs: u64) -> String {
+    match secs {
+        s if s < 60 => format!("{s}s"),
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 86_400 => format!("{}h", s / 3600),
+        s => format!("{}d", s / 86_400),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn count(s: &str, c: char) -> usize {
         s.chars().filter(|&x| x == c).count()
+    }
+
+    #[test]
+    fn a_brief_duration_uses_one_unit_and_stays_short() {
+        assert_eq!(brief_duration(0), "0s");
+        assert_eq!(brief_duration(59), "59s");
+        assert_eq!(brief_duration(60), "1m");
+        assert_eq!(brief_duration(3599), "59m");
+        assert_eq!(brief_duration(3600), "1h");
+        assert_eq!(brief_duration(86_399), "23h");
+        assert_eq!(brief_duration(86_400), "1d");
+        // The point is the width: a badge must not push the hostname out.
+        for secs in [0, 59, 3600, 86_400, 86_400 * 365] {
+            assert!(brief_duration(secs).len() <= 4, "{secs}");
+        }
     }
 
     #[test]

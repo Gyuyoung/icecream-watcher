@@ -4,9 +4,10 @@ A terminal monitor for [Icecream](https://github.com/icecc/icecream) (`icecc`)
 distributed compile clusters — the cluster equivalent of `btop`, where each
 build node reads like a process.
 
-**Status: Phase 5.** Cluster band, bars, history graphs, sorting, keyboard
-navigation and a per-node detail view. See [ARCHITECTURE.md](ARCHITECTURE.md)
-for the design and the roadmap.
+**Status: Phase 6.** Cluster band, bars, history graphs, sorting, keyboard
+navigation, a per-node detail view, and failure handling that keeps the screen
+honest when the cluster or the network misbehaves. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
 
 ```
 icecream-watcher  build-master:8765  proto 43  up 04:12:07   sort name   [?] help
@@ -117,6 +118,9 @@ Other flags:
 | `--poll-timeout MS` | per-node deadline (default 750) |
 | `--stale-after MS` | when to call metrics stale (default 5000) |
 | `--no-agents` | scheduler data only; do not poll agents at all |
+| `--job-timeout SECS` | forget a job whose completion never arrives (default 1800; 0 disables) |
+| `--forget-offline SECS` | drop a node after this long offline (default 0, meaning never) |
+| `--reconnect-max-delay SECS` | ceiling on the reconnect backoff (default 30) |
 
 ## Node metrics
 
@@ -151,7 +155,7 @@ off entirely.
 | `PgUp` / `PgDn` | move or scroll ten rows |
 | `s` | cycle the sort key |
 | `c`, `m`, `l`, `i` | sort by CPU, memory, load, Icecream jobs |
-| `r` | redraw |
+| `r` | redraw; while disconnected, retry the connection now |
 | `?` | help |
 | `Enter` | open or close the node detail view |
 
@@ -201,6 +205,38 @@ for a second after each accept, then blocks in `poll()` for up to
 daemons are connected the handshake is immediate. `icecream-watcher` shows
 `handshaking…` while it waits and defaults `--handshake-timeout` to 45 s;
 lowering it will make idle clusters look dead.
+
+## When things go wrong
+
+The screen is meant to stay honest, which mostly means never showing a
+confident number it has not checked.
+
+**A severed link.** Scheduler stats are change-driven, so an idle cluster and a
+pulled cable both send nothing. TCP keepalive settles it: a vanished scheduler
+becomes a visible `disconnected` in about 35 seconds instead of leaving a
+plausible, frozen cluster on screen. Silence that is merely silence is labelled
+`quiet 5m` in the header once it passes a minute.
+
+**A scheduler that is gone.** Reconnection backs off 1, 2, 4 … up to
+`--reconnect-max-delay`, so a monitor left running overnight does not spend the
+night broadcasting. A session that reached login resets the backoff, so a
+*restarted* scheduler is picked up within a second or two; only a genuinely
+absent one is backed off. The header shows the countdown and the attempt number,
+and `r` cuts the wait short.
+
+**A different scheduler.** If discovery lands somewhere new, the header says
+`⇄ moved from <old>`: every host id, node and counter now belongs to another
+cluster, which is not something to discover by noticing the numbers changed.
+
+**A node that leaves.** Its row stays, marked `down 12m`, because which node
+just died is usually the thing you opened the monitor for. `--forget-offline`
+drops them for sessions that run for days.
+
+**A job that never finishes.** The protocol does not guarantee that every job
+you are told about is one you are told the end of, and a stuck job would inflate
+the queue depth for the rest of the session. Jobs expire after
+`--job-timeout` — generously, because expiring early understates the queue just
+as badly — and the count is logged rather than hidden.
 
 ## Layout
 

@@ -89,6 +89,10 @@ pub struct Node {
     pub last_update: Instant,
     /// Set by a `State:Offline` record or a scheduler-side removal.
     pub offline: bool,
+    /// When it went offline, so a row can say *how long* it has been down.
+    /// "build07 is down" and "build07 has been down since before this build
+    /// started" call for different reactions.
+    pub offline_since: Option<Instant>,
     /// Last good metrics from this node's agent, kept even once stale so a row
     /// shows its last known values rather than going blank.
     pub resources: Option<Snapshot>,
@@ -120,6 +124,7 @@ impl Node {
             jobs_local: 0,
             last_update: Instant::now(),
             offline: false,
+            offline_since: None,
             resources: None,
             resource_state: ResourceState::default(),
             resources_at: None,
@@ -180,6 +185,11 @@ impl Node {
     /// normal, so this is a weak signal — prefer [`Self::metrics_stale`].
     pub fn is_stale(&self, limit: Duration) -> bool {
         !self.offline && self.last_update.elapsed() > limit
+    }
+
+    /// How long this node has been offline, if it is.
+    pub fn downtime(&self) -> Option<Duration> {
+        self.offline_since.map(|t| t.elapsed())
     }
 
     /// Whether an agent has ever answered for this node.
@@ -335,6 +345,10 @@ pub enum ConnectionState {
     },
     Disconnected {
         reason: String,
+        /// Consecutive failed attempts; 0 right after a working session ended.
+        attempt: u32,
+        /// When the connection task will try again.
+        retry_at: Instant,
     },
 }
 
@@ -346,6 +360,12 @@ pub struct Totals {
     pub failed: u64,
     /// `MON_JOB_DONE` for a job we never saw begin — normal right after connect.
     pub unmatched_done: u64,
+    /// Jobs dropped because their end never arrived. See
+    /// [`Cluster::job_timeout`]; a non-zero count here means the queue figure
+    /// would otherwise have been overstated.
+    pub expired_jobs: u64,
+    /// Offline nodes forgotten after [`Cluster::offline_retention`].
+    pub forgotten_nodes: u64,
 }
 
 /// One-glance cluster figures, computed on demand.
@@ -399,6 +419,25 @@ pub struct Cluster {
     pub rate_history: History,
     /// Completion total at the previous tick, to turn a counter into a rate.
     last_completed: u64,
+    /// Drop a job we were told about but never told the end of, after this.
+    ///
+    /// The protocol gives no guarantee that every `MON_GET_CS` or
+    /// `MON_JOB_BEGIN` is followed by a `MON_JOB_DONE`: upstream's
+    /// `handle_job_done` returns without notifying monitors when it cannot find
+    /// the job, and its cancellation lookup only matches jobs that have not yet
+    /// been assigned. A lost end would otherwise inflate the queue depth for
+    /// the rest of the session and grow this map without bound.
+    ///
+    /// Generous on purpose. Expiring early understates the queue, which is
+    /// exactly as wrong as overstating it, and a saturated cluster can keep a
+    /// job queued legitimately for a long time. `None` disables expiry.
+    pub job_timeout: Option<Duration>,
+    /// Forget an offline node after this long. `None` keeps it for the session.
+    pub offline_retention: Option<Duration>,
+    /// The first scheduler this session attached to. A later session attaching
+    /// to a *different* address means the whole cluster on screen changed
+    /// identity, which the user has to be told rather than left to notice.
+    pub first_target: Option<SchedulerTarget>,
 }
 
 impl Default for Cluster {
@@ -423,6 +462,9 @@ impl Cluster {
             slots_history: History::default(),
             rate_history: History::default(),
             last_completed: 0,
+            job_timeout: Some(Duration::from_secs(30 * 60)),
+            offline_retention: None,
+            first_target: None,
         }
     }
 
@@ -449,6 +491,10 @@ impl Cluster {
     /// graphs still scroll instead of freezing — and so the horizontal axis
     /// means time rather than "however many events happened".
     pub fn tick_history(&mut self) {
+        // Before the summary: an expired job must not be counted into the very
+        // sample that its expiry was meant to correct.
+        self.expire();
+
         let summary = self.summary();
 
         self.pending_history.push(Some(summary.pending_jobs as f32));
@@ -482,6 +528,79 @@ impl Cluster {
             node.cpu_history.push(cpu);
             node.mem_history.push(mem);
             node.slots_history.push(slots);
+        }
+    }
+
+    /// Drop state the scheduler has stopped telling us about.
+    ///
+    /// A monitor is a long-running process fed by a remote one, so every
+    /// collection it keeps needs a bound that does not depend on the remote
+    /// behaving. Both bounds here are opt-out rather than opt-in because an
+    /// unbounded map is not a safe default for a process meant to run for days.
+    fn expire(&mut self) {
+        if let Some(limit) = self.job_timeout {
+            let mut lost: Vec<u32> = Vec::new();
+            for job in self.jobs.values() {
+                if job.since.elapsed() > limit {
+                    lost.push(job.id);
+                }
+            }
+            for id in lost {
+                let Some(job) = self.jobs.remove(&id) else {
+                    continue;
+                };
+                // Whatever node was holding it must release the slot too, or
+                // the row keeps showing work that is not happening.
+                if let Some(host_id) = job.host_id {
+                    if let Some(node) = self.nodes.get_mut(&host_id) {
+                        node.active_jobs.remove(&id);
+                        node.local_jobs.remove(&id);
+                    }
+                }
+                self.totals.expired_jobs += 1;
+                tracing::warn!(
+                    "job {id} ({:?}, {}) expired after {limit:?} with no MON_JOB_DONE",
+                    job.state,
+                    if job.filename.is_empty() {
+                        "<unnamed>"
+                    } else {
+                        &job.filename
+                    }
+                );
+            }
+        }
+
+        if let Some(limit) = self.offline_retention {
+            let gone: Vec<u32> = self
+                .nodes
+                .values()
+                .filter(|n| n.downtime().is_some_and(|d| d > limit))
+                .map(|n| n.host_id)
+                .collect();
+            for host_id in gone {
+                if let Some(node) = self.nodes.remove(&host_id) {
+                    self.totals.forgotten_nodes += 1;
+                    tracing::info!(
+                        "forgetting node {} (host id {host_id}), offline for over {limit:?}",
+                        node.name()
+                    );
+                }
+            }
+        }
+    }
+
+    /// The scheduler we attached to first, when the current one is not it.
+    ///
+    /// Non-`None` means the cluster on screen is not the cluster the session
+    /// started on — a different scheduler answered discovery, so every host id,
+    /// node and counter belongs to somewhere else.
+    pub fn moved_from(&self) -> Option<&SchedulerTarget> {
+        let ConnectionState::Connected { target, .. } = &self.connection else {
+            return None;
+        };
+        match &self.first_target {
+            Some(first) if first != target => Some(first),
+            _ => None,
         }
     }
 
@@ -538,14 +657,27 @@ impl Cluster {
             }
             Update::Connected { target, protocol } => {
                 self.reset();
+                // Recorded before the move so the *first* scheduler of the
+                // session stays the reference point.
+                if self.first_target.is_none() {
+                    self.first_target = Some(target.clone());
+                }
                 self.connection = ConnectionState::Connected {
                     target,
                     protocol,
                     since: Instant::now(),
                 };
             }
-            Update::Disconnected { reason } => {
-                self.connection = ConnectionState::Disconnected { reason };
+            Update::Disconnected {
+                reason,
+                attempt,
+                retry_at,
+            } => {
+                self.connection = ConnectionState::Disconnected {
+                    reason,
+                    attempt,
+                    retry_at,
+                };
                 // Jobs cannot make progress without the scheduler, and their
                 // ids are only meaningful within a session.
                 self.jobs.clear();
@@ -665,6 +797,9 @@ impl Cluster {
         if record.offline {
             // Keep the row: "which node just died" is exactly what the user
             // wants to see. Its jobs are gone, though.
+            if !node.offline {
+                node.offline_since = Some(Instant::now());
+            }
             node.offline = true;
             let dead: Vec<u32> = node
                 .active_jobs
@@ -680,6 +815,7 @@ impl Cluster {
         } else {
             // A node can come back with the same host id after a restart.
             node.offline = false;
+            node.offline_since = None;
         }
     }
 
@@ -851,6 +987,248 @@ mod tests {
         c.apply(stats(1, &node_blob("build01", 8)));
         c.apply(stats(2, &node_blob("build02", 4)));
         c
+    }
+
+    fn get_cs(job_id: u32, client_id: u32) -> Update {
+        Update::Event(Event::GetCs {
+            job_id,
+            client_id,
+            filename: "lost.cpp".into(),
+            lang: 0,
+        })
+    }
+
+    fn job_begin(job_id: u32, host_id: u32) -> Update {
+        Update::Event(Event::JobBegin {
+            job_id,
+            start_time: 0,
+            host_id,
+        })
+    }
+
+    /// Advance past a deliberately tiny retention limit. Real durations rather
+    /// than a fake clock, because the code under test reads the monotonic clock
+    /// directly and a fake one would test the fake.
+    fn pass(limit: Duration) {
+        std::thread::sleep(limit * 5);
+    }
+
+    // -------------------------------------------------- job expiry
+
+    #[test]
+    fn a_job_whose_end_never_arrives_is_dropped_and_counted() {
+        // Upstream does not guarantee a MON_JOB_DONE for every job it announces:
+        // handle_job_done returns without notifying monitors when it cannot find
+        // the job, and its cancellation lookup only matches unassigned ones. A
+        // lost end would otherwise overstate the queue for the whole session.
+        let mut c = cluster_with_two_nodes();
+        c.job_timeout = Some(Duration::from_millis(2));
+        c.apply(get_cs(7, 1));
+        assert_eq!(c.summary().pending_jobs, 1);
+
+        pass(Duration::from_millis(2));
+        c.tick_history();
+
+        assert_eq!(c.summary().pending_jobs, 0, "the stuck job must be dropped");
+        assert_eq!(
+            c.totals.expired_jobs, 1,
+            "an expiry is counted, never silent"
+        );
+    }
+
+    #[test]
+    fn expiring_a_running_job_releases_the_slot_it_was_holding() {
+        // Dropping the job but leaving the node's slot marked busy would swap
+        // one wrong number for another.
+        let mut c = cluster_with_two_nodes();
+        c.job_timeout = Some(Duration::from_millis(2));
+        c.apply(get_cs(7, 1));
+        c.apply(job_begin(7, 2));
+        assert_eq!(c.nodes[&2].current_jobs(), 1);
+
+        pass(Duration::from_millis(2));
+        c.tick_history();
+
+        assert_eq!(c.nodes[&2].current_jobs(), 0);
+        assert_eq!(c.summary().used_slots, 0);
+    }
+
+    #[test]
+    fn a_job_within_its_timeout_is_left_alone() {
+        let mut c = cluster_with_two_nodes();
+        c.job_timeout = Some(Duration::from_secs(3600));
+        c.apply(get_cs(7, 1));
+        c.tick_history();
+        assert_eq!(c.summary().pending_jobs, 1);
+        assert_eq!(c.totals.expired_jobs, 0);
+    }
+
+    #[test]
+    fn job_expiry_can_be_switched_off() {
+        let mut c = cluster_with_two_nodes();
+        c.job_timeout = None;
+        c.apply(get_cs(7, 1));
+        pass(Duration::from_millis(2));
+        c.tick_history();
+        assert_eq!(c.summary().pending_jobs, 1);
+        assert_eq!(c.totals.expired_jobs, 0);
+    }
+
+    #[test]
+    fn the_queue_graph_records_the_corrected_figure_not_the_stale_one() {
+        // expire() runs before the sample is taken, so the tick that drops a
+        // job does not also record it as still queued.
+        let mut c = cluster_with_two_nodes();
+        c.job_timeout = Some(Duration::from_millis(2));
+        c.apply(get_cs(7, 1));
+        pass(Duration::from_millis(2));
+        c.tick_history();
+        assert_eq!(c.pending_history.last(), Some(0.0));
+    }
+
+    // -------------------------------------------------- offline nodes
+
+    #[test]
+    fn an_offline_node_records_when_it_went_down() {
+        let mut c = cluster_with_two_nodes();
+        assert_eq!(c.nodes[&1].downtime(), None);
+
+        c.apply(stats(1, "State:Offline\n"));
+        assert!(
+            c.nodes[&1].downtime().is_some(),
+            "a down node must know how long it has been down"
+        );
+
+        c.apply(stats(1, &node_blob("build01", 8)));
+        assert_eq!(
+            c.nodes[&1].downtime(),
+            None,
+            "coming back must clear the clock"
+        );
+    }
+
+    #[test]
+    fn repeated_offline_records_do_not_restart_the_downtime_clock() {
+        // The scheduler can resend State:Offline; if that reset the timer the
+        // row would permanently read "down 0s".
+        let mut c = cluster_with_two_nodes();
+        c.apply(stats(1, "State:Offline\n"));
+        let first = c.nodes[&1].offline_since;
+        pass(Duration::from_millis(2));
+        c.apply(stats(1, "State:Offline\n"));
+        assert_eq!(c.nodes[&1].offline_since, first);
+    }
+
+    #[test]
+    fn offline_nodes_are_kept_by_default() {
+        // "which node just died" is the point of the row; forgetting it by
+        // default would hide exactly what the user came to see.
+        let c = Cluster::new();
+        assert_eq!(c.offline_retention, None);
+    }
+
+    #[test]
+    fn a_long_dead_node_is_forgotten_when_asked_and_counted() {
+        let mut c = cluster_with_two_nodes();
+        c.offline_retention = Some(Duration::from_millis(2));
+        c.apply(stats(1, "State:Offline\n"));
+
+        pass(Duration::from_millis(2));
+        c.tick_history();
+
+        assert!(!c.nodes.contains_key(&1), "the dead node should be gone");
+        assert!(c.nodes.contains_key(&2), "the live one must stay");
+        assert_eq!(c.totals.forgotten_nodes, 1);
+    }
+
+    #[test]
+    fn a_live_node_is_never_forgotten_however_long_it_is_quiet() {
+        // Scheduler stats are change-driven, so a busy-but-unchanging node can
+        // be silent for a long time. Only being *offline* starts the clock.
+        let mut c = cluster_with_two_nodes();
+        c.offline_retention = Some(Duration::from_millis(1));
+        pass(Duration::from_millis(1));
+        c.tick_history();
+        assert_eq!(c.nodes.len(), 2);
+        assert_eq!(c.totals.forgotten_nodes, 0);
+    }
+
+    // -------------------------------------------------- scheduler identity
+
+    #[test]
+    fn reconnecting_to_the_same_scheduler_is_not_a_move() {
+        let mut c = cluster_with_two_nodes();
+        c.apply(Update::Disconnected {
+            reason: "reset".into(),
+            attempt: 1,
+            retry_at: Instant::now(),
+        });
+        c.apply(connected());
+        assert_eq!(c.moved_from(), None);
+    }
+
+    #[test]
+    fn landing_on_a_different_scheduler_is_reported() {
+        // Broadcast discovery can find a different scheduler after the first
+        // dies. Every host id, node and counter then belongs somewhere else,
+        // and the figures must not change identity behind the user's back.
+        let mut c = cluster_with_two_nodes();
+        c.apply(Update::Connected {
+            target: SchedulerTarget {
+                host: "other-sched".into(),
+                port: 8765,
+            },
+            protocol: 43,
+        });
+        let moved = c.moved_from().expect("a move must be visible");
+        assert_eq!(moved.host, "sched");
+    }
+
+    #[test]
+    fn a_move_is_judged_against_the_first_scheduler_not_the_previous_one() {
+        // Otherwise bouncing A → B → A would still claim to have moved.
+        let mut c = cluster_with_two_nodes();
+        c.apply(Update::Connected {
+            target: SchedulerTarget {
+                host: "other-sched".into(),
+                port: 8765,
+            },
+            protocol: 43,
+        });
+        c.apply(connected());
+        assert_eq!(c.moved_from(), None, "back where it started is not a move");
+    }
+
+    #[test]
+    fn a_move_is_not_claimed_while_disconnected() {
+        let mut c = cluster_with_two_nodes();
+        c.apply(Update::Disconnected {
+            reason: "reset".into(),
+            attempt: 1,
+            retry_at: Instant::now(),
+        });
+        assert_eq!(c.moved_from(), None);
+    }
+
+    // -------------------------------------------------- bounded state
+
+    #[test]
+    fn a_long_session_of_churn_does_not_accumulate_state() {
+        // The scale check that matters for a process meant to run for days:
+        // state must track what is happening now, not everything that ever did.
+        let mut c = cluster_with_two_nodes();
+        for job_id in 0..20_000u32 {
+            c.apply(get_cs(job_id, 1));
+            c.apply(job_begin(job_id, 2));
+            c.apply(Update::Event(Event::JobDone(JobDone {
+                job_id,
+                exit_code: 0,
+                ..Default::default()
+            })));
+        }
+        assert!(c.jobs.is_empty(), "{} jobs left behind", c.jobs.len());
+        assert_eq!(c.nodes[&2].active_jobs.len(), 0);
+        assert_eq!(c.totals.completed_remote, 20_000);
     }
 
     #[test]
@@ -1039,6 +1417,8 @@ mod tests {
 
         c.apply(Update::Disconnected {
             reason: "test".into(),
+            attempt: 1,
+            retry_at: Instant::now(),
         });
         assert!(!c.is_connected());
         // Nodes stay visible while disconnected, but their work does not.

@@ -122,6 +122,18 @@ impl App {
         self.dirty = true;
     }
 
+    /// How long since the scheduler last said anything, once connected.
+    ///
+    /// `None` before the first event of a session, because "silent for 0 s"
+    /// and "has never spoken" are different things and only the first is
+    /// reassuring.
+    pub fn quiet_for(&self) -> Option<Duration> {
+        if !self.cluster.is_connected() {
+            return None;
+        }
+        Some(self.last_event?.elapsed())
+    }
+
     pub fn take_dirty(&mut self) -> bool {
         std::mem::take(&mut self.dirty)
     }

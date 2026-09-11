@@ -86,6 +86,22 @@ struct Cli {
     #[arg(long)]
     no_agents: bool,
 
+    /// Forget a job whose `MON_JOB_DONE` never arrives, after this long.
+    /// 0 disables expiry. Generous by default: expiring early understates the
+    /// queue, which is as wrong as overstating it.
+    #[arg(long, value_name = "SECS", default_value_t = 1800)]
+    job_timeout: u64,
+
+    /// Remove a node from the list after it has been offline this long.
+    /// 0 (the default) keeps offline nodes for the whole session.
+    #[arg(long, value_name = "SECS", default_value_t = 0)]
+    forget_offline: u64,
+
+    /// Longest gap between reconnection attempts. Attempts back off from 1 s,
+    /// doubling, so a scheduler that is simply gone is not polled all night.
+    #[arg(long, value_name = "SECS", default_value_t = 30)]
+    reconnect_max_delay: u64,
+
     /// Print events as text instead of drawing a TUI. Useful for checking a
     /// cluster over ssh, or in CI.
     #[arg(long)]
@@ -124,11 +140,12 @@ fn main() -> io::Result<()> {
         let opts = Options {
             discover_timeout: Duration::from_secs(cli.discover_timeout),
             handshake_timeout: Duration::from_secs(cli.handshake_timeout),
+            reconnect_max_delay: Duration::from_secs(cli.reconnect_max_delay.max(1)),
             record: cli.record.clone(),
             ..Options::default()
         };
 
-        let rx = conn::spawn(source, opts);
+        let (rx, retry) = conn::spawn(source, opts);
 
         // The collector is optional, so a cluster with no agents deployed pays
         // nothing for the feature.
@@ -141,11 +158,15 @@ fn main() -> io::Result<()> {
             })
         });
 
-        let stale_after = Duration::from_millis(cli.stale_after);
+        let limits = Limits {
+            metrics_stale_after: Duration::from_millis(cli.stale_after),
+            job_timeout: optional_secs(cli.job_timeout),
+            offline_retention: optional_secs(cli.forget_offline),
+        };
         if cli.dump {
-            run_dump(rx, collector, stale_after).await
+            run_dump(rx, collector, limits).await
         } else {
-            run_tui(rx, collector, stale_after).await
+            run_tui(rx, collector, limits, retry).await
         }
     })
 }
@@ -155,10 +176,10 @@ fn main() -> io::Result<()> {
 async fn run_dump(
     mut rx: mpsc::Receiver<conn::Update>,
     collector: Option<Collector>,
-    stale_after: Duration,
+    limits: Limits,
 ) -> io::Result<()> {
     let mut app = App::new();
-    app.cluster.metrics_stale_after = stale_after;
+    limits.apply(&mut app);
     let (targets_tx, mut samples) = split(collector);
 
     loop {
@@ -197,6 +218,28 @@ async fn run_dump(
     Ok(())
 }
 
+/// Retention policy, applied identically in both modes.
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    metrics_stale_after: Duration,
+    job_timeout: Option<Duration>,
+    offline_retention: Option<Duration>,
+}
+
+impl Limits {
+    fn apply(&self, app: &mut App) {
+        app.cluster.metrics_stale_after = self.metrics_stale_after;
+        app.cluster.job_timeout = self.job_timeout;
+        app.cluster.offline_retention = self.offline_retention;
+    }
+}
+
+/// `0` on the command line means "no limit", which is clearer than asking the
+/// user to type a number large enough to never happen.
+fn optional_secs(secs: u64) -> Option<Duration> {
+    (secs > 0).then(|| Duration::from_secs(secs))
+}
+
 type Collector = (
     watch::Sender<collect::Targets>,
     mpsc::Receiver<collect::Sample>,
@@ -218,12 +261,25 @@ fn split(
 ///
 /// `select!` needs a future for every branch, and a branch that can never fire
 /// is how the same loop serves both modes.
+///
+/// A closed channel **retires the branch**. A closed `mpsc::Receiver` returns
+/// `None` immediately and forever, so a branch that merely ignores `None` makes
+/// `select!` pick it every iteration and spins the process at 100 % CPU — on
+/// the machine the tool exists to avoid disturbing. Dropping the receiver turns
+/// the branch back into one that never fires.
 async fn recv_sample(
     samples: &mut Option<mpsc::Receiver<collect::Sample>>,
 ) -> Option<collect::Sample> {
-    match samples {
-        Some(rx) => rx.recv().await,
-        None => std::future::pending().await,
+    let Some(rx) = samples else {
+        return std::future::pending().await;
+    };
+    match rx.recv().await {
+        Some(sample) => Some(sample),
+        None => {
+            tracing::error!("the agent collector stopped; continuing without node metrics");
+            *samples = None;
+            std::future::pending().await
+        }
     }
 }
 
@@ -247,12 +303,13 @@ fn publish_targets(app: &App, targets: Option<&watch::Sender<collect::Targets>>)
 async fn run_tui(
     mut rx: mpsc::Receiver<conn::Update>,
     collector: Option<Collector>,
-    stale_after: Duration,
+    limits: Limits,
+    retry: conn::Retry,
 ) -> io::Result<()> {
     let mut terminal = setup_terminal()?;
     let mut keys = spawn_input_reader();
     let mut app = App::new();
-    app.cluster.metrics_stale_after = stale_after;
+    limits.apply(&mut app);
     let mut ui = Ui::default();
     let (targets_tx, mut samples) = split(collector);
     let mut ticker = tokio::time::interval(FRAME_INTERVAL);
@@ -292,7 +349,15 @@ async fn run_tui(
             }
             key = keys.recv() => match key {
                 Some(InputEvent::Key(code, mods)) => {
-                    app.on_key(classify(code, mods));
+                    let key = classify(code, mods);
+                    // `r` cannot pull data from the scheduler — it pushes, and a
+                    // monitor may send nothing (ARCHITECTURE.md §1.2) — but while
+                    // disconnected there *is* something to hurry: the next
+                    // connection attempt, which backoff may have pushed 30 s out.
+                    if key == app::Key::Refresh && !app.cluster.is_connected() {
+                        retry.now();
+                    }
+                    app.on_key(key);
                     if app.should_quit {
                         break Ok(());
                     }
@@ -396,5 +461,71 @@ fn init_logging(cli: &Cli) -> io::Result<()> {
             Ok(())
         }
         None => Ok(()), // TUI mode with no log file: stay silent.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_means_no_limit_rather_than_an_instant_one() {
+        // A zero that meant "expire everything immediately" would silently empty
+        // the screen for anyone who typed it expecting "off".
+        assert_eq!(optional_secs(0), None);
+        assert_eq!(optional_secs(30), Some(Duration::from_secs(30)));
+    }
+
+    #[tokio::test]
+    async fn a_dead_collector_retires_its_branch_instead_of_spinning() {
+        // A closed mpsc::Receiver yields None immediately and forever. A select!
+        // branch that merely ignores None is therefore always ready, and the
+        // render loop burns a whole core — on the build machine this tool exists
+        // to stay out of the way of. The branch has to retire itself.
+        let (tx, rx) = mpsc::channel::<collect::Sample>(1);
+        let mut samples = Some(rx);
+        drop(tx); // the collector task is gone
+
+        let mut wakeups = 0u64;
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => break,
+                _ = recv_sample(&mut samples) => wakeups += 1,
+            }
+        }
+
+        assert_eq!(
+            wakeups, 0,
+            "a closed collector woke the loop {wakeups} times in 100 ms"
+        );
+        assert!(samples.is_none(), "the branch must be retired, not retried");
+    }
+
+    #[tokio::test]
+    async fn samples_still_arrive_while_the_collector_lives() {
+        // The guard above must not have turned the branch off altogether.
+        let (tx, rx) = mpsc::channel::<collect::Sample>(1);
+        let mut samples = Some(rx);
+        tx.send(collect::Sample {
+            host_id: 4,
+            result: icecc_model::ResourceResult::Unreachable("nope".into()),
+        })
+        .await
+        .unwrap();
+
+        let got = recv_sample(&mut samples).await.expect("sample");
+        assert_eq!(got.host_id, 4);
+        assert!(samples.is_some());
+    }
+
+    #[tokio::test]
+    async fn polling_is_never_asked_for_when_agents_are_switched_off() {
+        // --no-agents leaves the receiver as None, which must park forever
+        // rather than resolve.
+        let mut samples: Option<mpsc::Receiver<collect::Sample>> = None;
+        let parked =
+            tokio::time::timeout(Duration::from_millis(50), recv_sample(&mut samples)).await;
+        assert!(parked.is_err(), "the disabled branch must never fire");
     }
 }

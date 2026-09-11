@@ -28,6 +28,8 @@
 mod detail;
 mod widgets;
 
+use std::time::{Duration, Instant};
+
 use icecc_model::{Bottleneck, Cluster, ConnectionState, Node, ResourceState, Summary, Trend};
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -93,6 +95,11 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
     }
 }
 
+/// Silence longer than this is worth stating in the header. Chosen above the
+/// keepalive detection window (~35 s) so anything shown here is a genuinely
+/// idle cluster rather than a link that is about to be declared dead.
+const QUIET_AFTER: Duration = Duration::from_secs(60);
+
 // ---------------------------------------------------------------- header
 
 fn header_line(app: &App, summary: &Summary) -> Line<'static> {
@@ -121,15 +128,54 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
                 ),
                 Style::default().add_modifier(Modifier::DIM),
             ));
+            // A different scheduler answering discovery means every host id,
+            // node and counter now belongs to another cluster. Saying so beats
+            // letting the figures change identity behind the user's back.
+            if let Some(first) = cluster.moved_from() {
+                spans.push(Span::styled(
+                    format!("  ⇄ moved from {first}"),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+            // Scheduler traffic is change-driven, so silence is ambiguous:
+            // this distinguishes "nothing is happening" from "nothing is
+            // arriving". TCP keepalive turns the latter into a disconnect
+            // within ~35 s, so a figure larger than that is a quiet cluster.
+            if let Some(quiet) = app.quiet_for() {
+                if quiet >= QUIET_AFTER {
+                    spans.push(Span::styled(
+                        format!("  quiet {}", widgets::brief_duration(quiet.as_secs())),
+                        Style::default().add_modifier(Modifier::DIM),
+                    ));
+                }
+            }
         }
         ConnectionState::Connecting { what } => spans.push(Span::styled(
             format!("{what}…"),
             Style::default().fg(Color::Yellow),
         )),
-        ConnectionState::Disconnected { reason } => spans.push(Span::styled(
-            format!("disconnected: {reason}"),
-            Style::default().fg(Color::LightRed),
-        )),
+        ConnectionState::Disconnected {
+            reason,
+            attempt,
+            retry_at,
+        } => {
+            spans.push(Span::styled(
+                format!("disconnected: {reason}"),
+                Style::default().fg(Color::LightRed),
+            ));
+            // Without this the screen says only that something is wrong, and
+            // gives no sign that anything is still being tried.
+            let left = retry_at.saturating_duration_since(Instant::now());
+            let when = if left.is_zero() {
+                "now".to_owned()
+            } else {
+                format!("in {}", widgets::duration(left.as_secs().max(1)))
+            };
+            spans.push(Span::styled(
+                format!("  retry {when} (attempt {attempt})"),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+        }
     }
 
     if cluster.is_connected() {
@@ -555,25 +601,34 @@ fn node_row<'a>(
 
 fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
     // At most one badge, in order of how much it should worry the reader.
-    let badge = if node.offline {
-        Some(("down", Color::LightRed))
+    let badge: Option<(String, Color)> = if node.offline {
+        // How long it has been down, not just that it is: a node that dropped
+        // ten seconds ago is a live incident, one down for three hours is
+        // furniture, and the reaction to each is different.
+        let text = match node.downtime() {
+            Some(d) => format!("down {}", widgets::brief_duration(d.as_secs())),
+            None => "down".to_owned(),
+        };
+        Some((text, Color::LightRed))
     } else if matches!(node.resource_state, ResourceState::Error { .. }) {
-        Some(("agent?", Color::LightRed))
+        Some(("agent?".to_owned(), Color::LightRed))
     } else if node.identity_mismatch {
-        Some(("host?", Color::LightRed))
+        Some(("host?".to_owned(), Color::LightRed))
     } else if node.suspect() {
-        Some(("no ack", Color::Yellow))
+        Some(("no ack".to_owned(), Color::Yellow))
     } else if stale {
-        Some(("stale", Color::Yellow))
+        Some(("stale".to_owned(), Color::Yellow))
     } else if !node.accepts_remote() {
-        Some(("local", Color::DarkGray))
+        Some(("local".to_owned(), Color::DarkGray))
     } else {
         None
     };
 
     // The badge is why the row deserves attention, so the *name* gives up
     // space for it rather than the badge being truncated off the end.
-    let badge_width = badge.map_or(0, |(text, _)| text.chars().count() + 1);
+    let badge_width = badge
+        .as_ref()
+        .map_or(0, |(text, _)| text.chars().count() + 1);
     let mut spans = vec![Span::raw(elide(
         node.name(),
         width.saturating_sub(badge_width),
@@ -786,7 +841,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  PgUp / PgDn  move ten rows"),
         Line::from("  Enter        open or close the node detail view"),
         Line::from("  Esc          close this, leave the detail view, or quit"),
-        Line::from("  r            redraw"),
+        Line::from("  r            redraw; while disconnected, retry now"),
         Line::from("  s            cycle sort"),
         Line::from("  c / m / l / i  sort by cpu / mem / load / jobs"),
         Line::from("  ?            toggle this help"),
@@ -1141,7 +1196,13 @@ mod tests {
         let mut app = busy_cluster();
         app.show_help = true;
         for (w, h) in [
-            (10u16, 3u16),
+            // A terminal can report zero during a resize or when detached, and
+            // a panic there leaves the user in a raw-mode alternate screen.
+            (0u16, 0u16),
+            (1, 1),
+            (0, 40),
+            (40, 0),
+            (10, 3),
             (20, 5),
             (40, 8),
             (60, 12),
@@ -1192,9 +1253,75 @@ mod tests {
 
         app.apply(Update::Disconnected {
             reason: "connection reset".into(),
+            attempt: 3,
+            retry_at: Instant::now() + Duration::from_secs(4),
         });
         let out = render(&app, 130, 24);
         assert!(out.contains("disconnected: connection reset"), "{out}");
+        // Saying only that something is wrong leaves the user unable to tell a
+        // retrying monitor from a wedged one.
+        assert!(out.contains("retry in"), "no retry countdown in:\n{out}");
+        assert!(out.contains("attempt 3"), "no attempt count in:\n{out}");
+    }
+
+    #[test]
+    fn a_due_retry_says_now_rather_than_counting_down_to_nothing() {
+        let mut app = App::new();
+        app.apply(Update::Disconnected {
+            reason: "connection refused".into(),
+            attempt: 1,
+            retry_at: Instant::now(),
+        });
+        let out = render(&app, 130, 24);
+        assert!(out.contains("retry now"), "{out}");
+    }
+
+    #[test]
+    fn landing_on_a_different_scheduler_is_said_out_loud() {
+        // Otherwise the whole screen quietly changes which cluster it describes.
+        let mut app = busy_cluster();
+        app.apply(Update::Connected {
+            target: icecc_proto::SchedulerTarget {
+                host: "backup-sched".into(),
+                port: 8765,
+            },
+            protocol: 43,
+        });
+        let out = render(&app, 160, 24);
+        assert!(out.contains("moved from"), "{out}");
+        assert!(out.contains("sched"), "{out}");
+    }
+
+    #[test]
+    fn a_silent_scheduler_is_labelled_quiet_not_left_ambiguous() {
+        // Scheduler stats are change-driven, so silence is normal — but
+        // indistinguishable from a dead link without being named.
+        let mut app = busy_cluster();
+        app.last_event = Some(Instant::now() - Duration::from_secs(300));
+        let out = render(&app, 160, 24);
+        assert!(out.contains("quiet 5m"), "{out}");
+    }
+
+    #[test]
+    fn a_busy_scheduler_is_not_labelled_quiet() {
+        let mut app = busy_cluster();
+        app.last_event = Some(Instant::now());
+        let out = render(&app, 160, 24);
+        assert!(!out.contains("quiet"), "{out}");
+    }
+
+    #[test]
+    fn a_down_node_says_how_long_it_has_been_down() {
+        // "down" and "down since before this build started" call for different
+        // reactions, and only one of them is an incident.
+        let mut app = busy_cluster();
+        app.apply(stats(1, "State:Offline\n"));
+        if let Some(node) = app.cluster.nodes.get_mut(&1) {
+            node.offline_since = Some(Instant::now() - Duration::from_secs(3600));
+        }
+        let out = render(&app, 160, 24);
+        let row = row_for(&out, "build01");
+        assert!(row.contains("down 1h"), "{row}");
     }
 
     #[test]
