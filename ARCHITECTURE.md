@@ -918,6 +918,23 @@ same width would round it to nothing; the unfilled part keeps a baseline row
 rather than going blank, so what the filled part is a fraction *of* stays on
 screen.
 
+**Slots are counted, not estimated.** `CUR` and `MAX` give the figures, and the
+meter beside them spends **one character cell per slot**. That is forced by how
+terminals work rather than chosen for looks: colour is a property of a character,
+so two slots sharing a cell cannot be told apart however many dots it holds. A
+busy slot is a filled left dot-column with the baseline running on to its right —
+a bar with a gap built in — so a run of busy slots stays countable instead of
+merging into one block.
+
+Each busy slot is coloured by the node that **submitted** the job, the way
+`icecream-sundae` attributes work, so a glance answers "whose work is this
+machine doing" and not merely "how full is it" — which the figures already
+answer better. A job that was already running when the monitor attached has no
+known submitter (the scheduler replays node stats on login, not jobs) and takes
+the compiling node's own colour. A node with more slots than the column has cells
+falls back to a proportional bar: one smeared cell per eight slots would claim a
+precision that is not there.
+
 **Each node is drawn in its own colour**, keyed by a hash of its hostname so the
 colour follows the machine through a re-sort, through other nodes joining and
 leaving, and between sessions — recognising the same node across all of that is
@@ -941,6 +958,9 @@ because "this one is gone" matters more than which machine it was.
 
 | Claim | Evidence |
 |---|---|
+| slots are individually countable | the meter is asserted as an exact glyph run — `⣇⣀⣀⣀⣀⣀⣀⣀` for one of eight — scoped to the meter, because counting baseline dots across the whole row also counts the history graph's |
+| a busy slot names its submitter | two jobs from different clients asserted to render in those clients' colours, read back from the buffer |
+| a huge node degrades rather than lies | 128 slots in a 16-cell column falls back to a proportional bar |
 | the dot bar is honest | exact width at every percentage, clamping, an empty bar still showing its extent, and half a character resolved where a block bar could not |
 | nodes really are drawn differently | twelve nodes rendered and their name colours read back **from the buffer**, not from the text — a scheme that stopped being applied would look identical in a text-only assertion |
 | a colour is an identity | asserted to survive a re-sort, and to lose to grey when the node goes offline |

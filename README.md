@@ -20,15 +20,15 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                                           SLOTS              IN    OUT LOAD  SPEED  SLOTS 2min                 │
-│build01 cpu!                           ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀ 15/16     15      0 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02 mem!                           ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀ 10/16     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
-│build03                                ⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀  8/16      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
-│build04                                ⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  4/16      4      0 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build05                                ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  0/8       0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build07                                ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  0/16      0      0    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│laptop local                           ⣿⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  1/12      1      0 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build06 down 0s                                             —      —      —    —      —                             │
+│NODE                                    CUR  MAX SLOTS                IN    OUT LOAD  SPEED  SLOTS 2min             │
+│build01 cpu!                             15   16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02 mem!                             10   16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build03                                   8   16 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
+│build04                                   4   16 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      4      9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build05                                   0    8 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build07                                   0   16 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│laptop local                              1   12 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build06 down 0s                           —    —                       —      —    —      —                         │
 │                                                                                                                    │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -52,11 +52,16 @@ and the `!` on its speed says so. `build07` has no agent, so only its load is
 unknown; everything else came from the scheduler. `build06` has dropped out, says
 how long it has been gone, and has sunk to the bottom.
 
-Both the slot bar and the two minutes of history that end each row are drawn in
-braille dots. Two dot columns to a character means the bar resolves half a cell
-— `laptop` above is one slot of twelve, and you can see it — and the unfilled
-part keeps a baseline row rather than going blank, so what the filled part is a
-fraction *of* stays visible.
+`CUR` and `MAX` carry the slot counts as plain numbers, and the meter beside
+them gives **one cell per slot**, so slots can be counted rather than estimated.
+A busy slot is a filled dot-column with the baseline carrying on to its right —
+a bar with a gap built in — so a run of them stays countable instead of merging
+into one block, and each is coloured by the node that *submitted* the job, the
+way `icecream-sundae` attributes work. A glance says "eight of these are
+`build02`'s". Jobs already running when the monitor attached have no known
+submitter and take the compiling node's own colour. A node with more slots than
+the column has cells falls back to a proportional bar, and the figures carry the
+count.
 
 **Each node is drawn in its own colour**, keyed by hostname so it follows the
 machine through a re-sort, through other nodes coming and going, and between
@@ -67,9 +72,9 @@ trouble. State still wins over identity, so an offline row is grey whatever
 colour it would otherwise have had.
 
 The history strip gets one character row, so four levels rather than the eight a
-block sparkline gives, but twice the horizontal resolution — for "has this node been busy, and is it
-busier now than a minute ago" that is the better trade, and the exact figure is
-one column to the left. Narrower terminals drop whole columns rather than
+block sparkline gives, but twice the horizontal resolution — for "has this node
+been busy, and is it busier now than a minute ago" that is the better trade, and
+the exact figure is one column to the left. Narrower terminals drop whole columns rather than
 squeezing every one into uselessness; spare width goes to hostnames first,
 because an elided name costs more than a shorter graph.
 
