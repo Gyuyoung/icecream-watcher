@@ -885,10 +885,38 @@ Decisions worth recording:
   rather than only the row carrying its label, which is what let the first
   version through.
 
+### The node table is Icecream-only
+
+The same principle applied to the rows. CPU, memory and temperature columns are
+a machine's business, not a compile cluster's, so they went to the detail view
+that Phase 5 built for exactly this; the table now carries compile slots, jobs
+in and out, the scheduler's load figure and compile speed, and ends each row with
+two minutes of that node's slot occupancy in dots.
+
+One judgement worth recording: the **conclusion** stays even though the gauges
+go. "Which nodes are CPU-constrained and which memory-constrained" is one of the
+nine questions this UI was built to answer, so a constrained node is badged
+`cpu!` or `mem!` beside its name. Dropping the raw percentages is a change of
+subject; dropping the answer would be a regression.
+
+A row is one character tall, so its graph gets four vertical levels rather than
+the eight a block sparkline gave — but twice the horizontal resolution, and the
+exact figure is in the column beside it. For a trend strip that is the better
+trade; for the band, where a taller graph is possible, it is not, which is why
+the two use different glyphs at different heights.
+
+Spare width goes to hostnames before graphs, up to 38 columns: an elided name
+costs the reader more than a shorter strip. The graph stops growing at 60 cells,
+where two dot columns per character already draw the whole 120-sample buffer one
+sample to a dot; past that it would only be upscaling.
+
 ### What was verified, and how
 
 | Claim | Evidence |
 |---|---|
+| the table carries cluster figures, not machine ones | the header is asserted to hold SLOTS/IN/OUT/LOAD/SPEED and *not* CPU/MEM/TEMP |
+| the constrained-node answer survived the change | `cpu!` and `mem!` badges asserted on the two constrained rows |
+| a missing agent costs one column, not a row | with no agent, slots, speed and the counters still render from scheduler data; only LOAD is unknown |
 | the glyph maths is right | dot-level tests: full is solid, a gap is blank, a measured zero draws the baseline, the area fills upward, and the two dot columns of a cell carry different samples |
 | height buys resolution | one row cannot separate 50 % from 57 %; four rows can |
 | the axis does not change with the width | a half-full buffer occupies half the axis at widths 20, 40, 100 and 250 |

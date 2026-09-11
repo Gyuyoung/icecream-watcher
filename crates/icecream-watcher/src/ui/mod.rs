@@ -585,12 +585,6 @@ fn label(text: &str) -> Span<'static> {
 
 // ---------------------------------------------------------------- node table
 
-/// Cells a metric column needs beyond its bar: four for the percentage, one
-/// for the `%`, and one for the bottleneck `!` — which must be budgeted for
-/// even on rows that do not carry it, or it is truncated away on exactly the
-/// rows where it matters.
-const METRIC_TEXT: usize = 6;
-
 /// Which columns fit, and how wide the bars can be.
 ///
 /// Chosen by breakpoint rather than by proportion: a bar narrower than about
@@ -598,79 +592,101 @@ const METRIC_TEXT: usize = 6;
 /// dropped instead of every column being squeezed into uselessness.
 struct Columns {
     name: u16,
-    cpu_bar: usize,
-    mem_bar: usize,
     slot_bar: usize,
+    /// `IN` / `OUT`: work actually done here, and work sent from here.
+    jobs: bool,
     load: bool,
     speed: bool,
-    temp: bool,
-    spark: usize,
+    /// Width of the trailing slot-occupancy graph, 0 to drop it.
+    graph: usize,
 }
 
+/// Which columns fit, and how wide the bar can be.
+///
+/// Chosen by breakpoint rather than by proportion: a bar narrower than about
+/// four cells conveys nothing, so below each threshold a whole column is
+/// dropped instead of every column being squeezed into uselessness. The graph
+/// then takes whatever is left, so a wide terminal spends its space on history
+/// rather than on padding.
 fn columns(width: u16) -> Columns {
-    match width {
-        w if w >= 124 => Columns {
-            name: 22,
-            cpu_bar: 14,
-            mem_bar: 12,
-            slot_bar: 9,
-            load: true,
-            speed: true,
-            temp: true,
-            spark: 12,
-        },
+    let mut cols = match width {
         w if w >= 108 => Columns {
-            name: 20,
-            cpu_bar: 12,
-            mem_bar: 10,
-            slot_bar: 8,
+            name: 24,
+            slot_bar: 16,
+            jobs: true,
             load: true,
             speed: true,
-            temp: true,
-            spark: 0,
+            graph: 0,
         },
         w if w >= 92 => Columns {
-            name: 18,
-            cpu_bar: 10,
-            mem_bar: 8,
-            slot_bar: 7,
+            name: 22,
+            slot_bar: 12,
+            jobs: true,
             load: true,
-            speed: false,
-            temp: true,
-            spark: 0,
+            speed: true,
+            graph: 0,
         },
         w if w >= 76 => Columns {
-            name: 16,
-            cpu_bar: 8,
-            mem_bar: 7,
-            slot_bar: 6,
+            name: 20,
+            slot_bar: 10,
+            jobs: false,
             load: true,
-            speed: false,
-            temp: false,
-            spark: 0,
+            speed: true,
+            graph: 0,
         },
         w if w >= 60 => Columns {
-            name: 14,
-            cpu_bar: 6,
-            mem_bar: 5,
-            slot_bar: 5,
-            load: false,
+            name: 16,
+            slot_bar: 8,
+            jobs: false,
+            load: true,
             speed: false,
-            temp: false,
-            spark: 0,
+            graph: 0,
         },
         _ => Columns {
             name: 12,
-            cpu_bar: 4,
-            mem_bar: 4,
-            slot_bar: 0,
+            slot_bar: 6,
+            jobs: false,
             load: false,
             speed: false,
-            temp: false,
-            spark: 0,
+            graph: 0,
         },
+    };
+
+    let fixed = cols.name as usize
+        + cols.slot_bar
+        + SLOT_TEXT
+        + if cols.jobs { (JOBS_WIDTH as usize + 1) * 2 } else { 0 }
+        + if cols.load { LOAD_WIDTH as usize + 1 } else { 0 }
+        + if cols.speed { SPEED_WIDTH as usize + 1 } else { 0 };
+    // Two for the borders, one for the column gap before the graph, and a
+    // little slack so the graph never collides with the right-hand border.
+    let mut spare = (width as usize).saturating_sub(fixed + 6);
+
+    // Names come first: an elided hostname costs the reader more than a shorter
+    // graph does, and build hosts are often named at length.
+    let widen = spare.min(NAME_MAX.saturating_sub(cols.name as usize));
+    cols.name += widen as u16;
+    spare -= widen;
+
+    if spare >= MIN_GRAPH {
+        cols.graph = spare.min(MAX_GRAPH);
     }
+    cols
 }
+
+/// Cells the slot column needs beyond its bar: `nn/nn`, plus a space.
+const SLOT_TEXT: usize = 6;
+const JOBS_WIDTH: u16 = 6;
+const LOAD_WIDTH: u16 = 5;
+const SPEED_WIDTH: u16 = 6;
+/// Below this a history graph shows too little time to be worth a column.
+const MIN_GRAPH: usize = 10;
+/// Beyond this the graph stops growing. Two dot columns per character means 60
+/// cells already draw the whole two-minute buffer one sample to a dot; wider is
+/// upscaling, and a table row is a strip rather than a chart.
+const MAX_GRAPH: usize = 60;
+/// How wide a hostname column may grow when there is space going spare.
+const NAME_MAX: usize = 38;
 
 fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let cluster = &app.cluster;
@@ -682,21 +698,13 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         Cell::from("NODE"),
         Cell::from(format!(
             "{:^width$}",
-            "CPU",
-            width = cols.cpu_bar + METRIC_TEXT
-        )),
-        Cell::from(format!(
-            "{:^width$}",
-            "MEM",
-            width = cols.mem_bar + METRIC_TEXT
+            "SLOTS",
+            width = cols.slot_bar + SLOT_TEXT
         )),
     ];
-    if cols.slot_bar > 0 {
-        header.push(Cell::from(format!(
-            "{:^width$}",
-            "SLOTS",
-            width = cols.slot_bar + 6
-        )));
+    if cols.jobs {
+        header.push(Cell::from(format!("{:>width$}", "IN", width = JOBS_WIDTH as usize)));
+        header.push(Cell::from(format!("{:>width$}", "OUT", width = JOBS_WIDTH as usize)));
     }
     if cols.load {
         header.push(Cell::from("LOAD"));
@@ -704,11 +712,8 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.speed {
         header.push(Cell::from("SPEED"));
     }
-    if cols.temp {
-        header.push(Cell::from("TEMP"));
-    }
-    if cols.spark > 0 {
-        header.push(Cell::from("CPU 2min"));
+    if cols.graph > 0 {
+        header.push(Cell::from("SLOTS 2min"));
     }
 
     let rows: Vec<Row> = app
@@ -719,23 +724,20 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
 
     let mut constraints = vec![
         Constraint::Length(cols.name),
-        Constraint::Length(cols.cpu_bar as u16 + METRIC_TEXT as u16),
-        Constraint::Length(cols.mem_bar as u16 + METRIC_TEXT as u16),
+        Constraint::Length(cols.slot_bar as u16 + SLOT_TEXT as u16),
     ];
-    if cols.slot_bar > 0 {
-        constraints.push(Constraint::Length(cols.slot_bar as u16 + 6));
+    if cols.jobs {
+        constraints.push(Constraint::Length(JOBS_WIDTH));
+        constraints.push(Constraint::Length(JOBS_WIDTH));
     }
     if cols.load {
-        constraints.push(Constraint::Length(5));
+        constraints.push(Constraint::Length(LOAD_WIDTH));
     }
     if cols.speed {
-        constraints.push(Constraint::Length(6));
+        constraints.push(Constraint::Length(SPEED_WIDTH));
     }
-    if cols.temp {
-        constraints.push(Constraint::Length(5));
-    }
-    if cols.spark > 0 {
-        constraints.push(Constraint::Length(cols.spark as u16));
+    if cols.graph > 0 {
+        constraints.push(Constraint::Length(cols.graph as u16));
     }
 
     let title = if cluster.nodes.is_empty() {
@@ -772,27 +774,16 @@ fn node_row<'a>(
     median_speed: Option<f64>,
     cluster: &Cluster,
 ) -> Row<'a> {
-    let bottleneck = node.bottleneck();
     let stale = node.has_agent() && node.metrics_stale(stale_after);
 
     let mut cells = vec![
         Cell::from(name_cell(node, stale, cols.name as usize)),
-        Cell::from(metric_cell(
-            node.cpu_pct(),
-            cols.cpu_bar,
-            bottleneck == Some(Bottleneck::Cpu),
-            node.offline,
-        )),
-        Cell::from(metric_cell(
-            node.mem_pct(),
-            cols.mem_bar,
-            bottleneck == Some(Bottleneck::Memory),
-            node.offline,
-        )),
+        Cell::from(slots_cell(node, cols.slot_bar)),
     ];
 
-    if cols.slot_bar > 0 {
-        cells.push(Cell::from(slots_cell(node, cols.slot_bar)));
+    if cols.jobs {
+        cells.push(Cell::from(count_cell(node, node.jobs_in)));
+        cells.push(Cell::from(count_cell(node, node.jobs_out)));
     }
     if cols.load {
         cells.push(Cell::from(load_cell(node)));
@@ -800,15 +791,8 @@ fn node_row<'a>(
     if cols.speed {
         cells.push(Cell::from(speed_cell(node, median_speed, cluster)));
     }
-    if cols.temp {
-        cells.push(Cell::from(temp_cell(node)));
-    }
-    if cols.spark > 0 {
-        let window = node.cpu_history.window(cols.spark);
-        cells.push(Cell::from(Line::from(Span::styled(
-            widgets::sparkline(&window, 100.0),
-            Style::default().fg(Color::DarkGray),
-        ))));
+    if cols.graph > 0 {
+        cells.push(Cell::from(slots_graph_cell(node, cols.graph)));
     }
 
     let row_style = if node.offline {
@@ -823,6 +807,39 @@ fn node_row<'a>(
     };
 
     Row::new(cells).style(row_style)
+}
+
+/// A counter since connect, right-aligned. Zero is dimmed rather than hidden:
+/// "this node has compiled nothing" is an answer, and a blank is not.
+fn count_cell<'a>(node: &Node, value: u64) -> Line<'a> {
+    if node.offline {
+        return dim(format!("{UNKNOWN:>width$}", width = JOBS_WIDTH as usize));
+    }
+    let text = format!("{value:>width$}", width = JOBS_WIDTH as usize);
+    if value == 0 {
+        dim(text)
+    } else {
+        Line::from(Span::raw(text))
+    }
+}
+
+/// Two minutes of this node's slot occupancy, in braille dots.
+///
+/// One character row is four levels rather than the eight a block sparkline
+/// gives, but twice the horizontal resolution — so a row-height strip shows
+/// twice the time at half the vertical detail. For "has this node been busy, and
+/// is it busier now than a minute ago" that is the better trade; the exact
+/// figure is one column to the left.
+fn slots_graph_cell<'a>(node: &Node, width: usize) -> Line<'a> {
+    if node.offline {
+        return dim(" ".repeat(width));
+    }
+    let samples = node.slots_history.stretched(width * graph::CELL_COLS);
+    let glyphs = graph::area(&samples, 100.0, width, 1);
+    Line::from(Span::styled(
+        glyphs.into_iter().next().unwrap_or_default(),
+        Style::default().fg(Color::LightBlue),
+    ))
 }
 
 fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
@@ -842,6 +859,17 @@ fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
         Some(("host?".to_owned(), Color::LightRed))
     } else if node.suspect() {
         Some(("no ack".to_owned(), Color::Yellow))
+    } else if let Some(b) = node.bottleneck() {
+        // The table no longer carries CPU and memory columns — they are not
+        // Icecream figures — but "why is this node not taking more work" is,
+        // and it is one of the questions this screen exists to answer. The
+        // conclusion stays; the raw gauges live in the detail view.
+        match b {
+            Bottleneck::Memory => Some(("mem!".to_owned(), Color::LightRed)),
+            Bottleneck::Cpu => Some(("cpu!".to_owned(), Color::LightRed)),
+            // A full slot count is already obvious from the bar beside it.
+            Bottleneck::Slots => None,
+        }
     } else if stale {
         Some(("stale".to_owned(), Color::Yellow))
     } else if !node.accepts_remote() {
@@ -883,41 +911,6 @@ pub(crate) fn elide(text: &str, max: usize) -> String {
         .take(max - 1)
         .chain(std::iter::once('…'))
         .collect()
-}
-
-/// A bar plus its percentage, with `!` when this metric is the node's limit.
-fn metric_cell<'a>(pct: Option<f32>, width: usize, is_bottleneck: bool, offline: bool) -> Line<'a> {
-    match pct {
-        Some(pct) if !offline => {
-            let mut spans = vec![
-                Span::styled(
-                    widgets::bar(pct, width),
-                    Style::default().fg(widgets::ramp(pct)),
-                ),
-                Span::raw(format!("{pct:>4.0}%")),
-            ];
-            if is_bottleneck {
-                spans.push(Span::styled(
-                    "!",
-                    Style::default()
-                        .fg(Color::LightRed)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-            Line::from(spans)
-        }
-        // No agent, or offline: keep the row's shape without implying a value.
-        _ => Line::from(vec![
-            Span::styled(
-                widgets::empty_bar(width),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!("{UNKNOWN:>5}"),
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]),
-    }
 }
 
 fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
@@ -989,16 +982,6 @@ fn speed_cell<'a>(node: &Node, median: Option<f64>, cluster: &Cluster) -> Line<'
         ));
     }
     Line::from(spans)
-}
-
-fn temp_cell<'a>(node: &Node) -> Line<'a> {
-    match node.temp_c() {
-        Some(t) if !node.offline => Line::from(Span::styled(
-            format!("{t:>3.0}°"),
-            Style::default().fg(widgets::temp_ramp(t)),
-        )),
-        _ => dim(format!("{UNKNOWN:>4}")),
-    }
 }
 
 fn dim<'a>(text: String) -> Line<'a> {
@@ -1354,24 +1337,40 @@ mod tests {
     fn nodes_get_bars_not_just_numbers() {
         let out = render(&busy_cluster(), 130, 24);
         let row = row_for(&out, "build01");
-        // A filled bar, a trough, and the figure.
+        // A filled bar, a trough, and the figure it stands for.
         assert!(row.contains('█'), "{row}");
         assert!(row.contains('░'), "{row}");
-        assert!(row.contains("95%"), "{row}");
+        assert!(row.contains("1/8"), "{row}");
+    }
+
+    #[test]
+    fn the_table_carries_icecream_figures_not_machine_ones() {
+        // btop is the reference for how the screen reads, not for what it
+        // measures. CPU, memory and temperature are a machine's business and
+        // belong in the detail view; slots, jobs, scheduling load and compile
+        // speed are the cluster's.
+        let out = render(&busy_cluster(), 130, 24);
+        let header = out
+            .lines()
+            .find(|l| l.contains("NODE"))
+            .expect("header row");
+        for icecream in ["SLOTS", "IN", "OUT", "LOAD", "SPEED"] {
+            assert!(header.contains(icecream), "missing {icecream}: {header}");
+        }
+        for machine in ["CPU", "MEM", "TEMP"] {
+            assert!(!header.contains(machine), "{machine} should be gone: {header}");
+        }
     }
 
     #[test]
     fn cpu_bound_and_memory_bound_nodes_are_distinguishable() {
+        // The gauges left the table with the rest of the machine metrics, but
+        // "why is this node not taking more work" is an Icecream question and
+        // one of the nine this screen exists to answer, so the conclusion stays
+        // as a badge even though the percentages behind it do not.
         let out = render(&busy_cluster(), 130, 24);
-        let cpu_bound = row_for(&out, "build01");
-        let mem_bound = row_for(&out, "build02");
-
-        // Each carries exactly one bottleneck marker, on a different metric.
-        assert_eq!(cpu_bound.matches('!').count(), 1, "{cpu_bound}");
-        assert_eq!(mem_bound.matches('!').count(), 1, "{mem_bound}");
-        // The marker follows the percentage it belongs to.
-        assert!(cpu_bound.contains("95%!"), "{cpu_bound}");
-        assert!(mem_bound.contains("95%!"), "{mem_bound}");
+        assert!(row_for(&out, "build01").contains("cpu!"), "{out}");
+        assert!(row_for(&out, "build02").contains("mem!"), "{out}");
     }
 
     #[test]
@@ -1381,14 +1380,17 @@ mod tests {
     }
 
     #[test]
-    fn a_node_history_sparkline_appears_when_there_is_room() {
+    fn a_node_history_graph_appears_when_there_is_room() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(out.contains("CPU 2min"), "{out}");
-        let row = row_for(&out, "build01");
-        // Ten ticks of ~95% CPU should draw near the top of the sparkline.
+        assert!(out.contains("SLOTS 2min"), "{out}");
+
+        // A working node has drawn dots; an idle one has a measured zero, not a
+        // blank — and both differ from a node that is not drawn at all.
+        let busy: String = row_for(&out, "build01").chars().filter(|c| is_braille(*c)).collect();
+        assert!(!busy.is_empty(), "no graph on a busy row: {out}");
         assert!(
-            row.contains('█') && row.chars().filter(|&c| c == '█').count() > 8,
-            "{row}"
+            busy.chars().any(|c| c != '\u{2800}'),
+            "ten ticks of work should leave dots: {busy:?}"
         );
     }
 
@@ -1414,9 +1416,11 @@ mod tests {
         ));
         let out = render(&app, 130, 24);
         let row = row_for(&out, "build01");
-        assert!(row.contains(UNKNOWN), "{row}");
-        assert!(row.contains('·'), "expected placeholder bars: {row}");
-        assert!(!row.contains('█'), "must not imply a measurement: {row}");
+        // Everything in this table comes from the scheduler except LOAD, so a
+        // missing agent costs one column and nothing else.
+        assert!(row.contains("0/8"), "slots are scheduler data: {row}");
+        assert!(row.contains('░'), "the slot bar should still be drawn: {row}");
+        assert!(row.contains(UNKNOWN), "load has no source: {row}");
         assert!(out.contains("1 no agent"), "{out}");
     }
 
@@ -1472,18 +1476,32 @@ mod tests {
     fn narrow_terminals_drop_columns_rather_than_squeezing_every_bar() {
         let app = busy_cluster();
 
-        let wide = render(&app, 130, 24);
-        assert!(wide.contains("SPEED") && wide.contains("TEMP") && wide.contains("CPU 2min"));
+        let header_of = |w: u16| -> String {
+            render(&app, w, 24)
+                .lines()
+                .find(|l| l.contains("NODE"))
+                .expect("header row")
+                .to_owned()
+        };
 
-        let medium = render(&app, 95, 24);
-        assert!(medium.contains("TEMP"), "{medium}");
-        assert!(!medium.contains("SPEED"), "{medium}");
+        let wide = header_of(130);
+        assert!(wide.contains("OUT") && wide.contains("SPEED"), "{wide}");
 
-        let narrow = render(&app, 70, 24);
-        assert!(!narrow.contains("TEMP"), "{narrow}");
-        assert!(narrow.contains("CPU"), "{narrow}");
-        // Bars survive at every width, because they are the point.
-        assert!(narrow.contains('█'), "{narrow}");
+        // Job counters go first: they are a tally, and a tally is the easiest
+        // thing to read one column to the right in the detail view.
+        let medium = header_of(80);
+        assert!(!medium.contains("OUT"), "{medium}");
+        assert!(medium.contains("SPEED"), "{medium}");
+
+        let narrow = header_of(65);
+        assert!(!narrow.contains("SPEED"), "{narrow}");
+        assert!(narrow.contains("LOAD"), "{narrow}");
+
+        let tiny = header_of(50);
+        assert!(!tiny.contains("LOAD"), "{tiny}");
+        // Slots survive every width, because they are the point.
+        assert!(tiny.contains("SLOTS"), "{tiny}");
+        assert!(render(&app, 50, 24).contains('░'), "the bar must survive");
     }
 
     #[test]
@@ -1634,7 +1652,11 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         let out = render(&app, 130, 24);
         assert!(out.contains("stale"), "{out}");
-        assert!(row_for(&out, "build01").contains("95%"), "{out}");
+        // Agent staleness must not blank what the *scheduler* told us: slots
+        // and speed have nothing to do with whether an agent answered.
+        let row = row_for(&out, "build01");
+        assert!(row.contains("1/8"), "{row}");
+        assert!(row.contains("3200"), "{row}");
     }
 
     #[test]
@@ -1697,21 +1719,29 @@ mod tests {
 
         // Short: block sparklines, because one row of braille is four levels —
         // worse than the eight a block gives.
+        let band_line = |out: &str| -> String {
+            out.lines()
+                .find(|l| l.contains("QUEUE"))
+                .expect("band")
+                .to_owned()
+        };
+
         let short = render(&app, 130, 20);
+        let line = band_line(&short);
         assert!(
-            short.chars().any(|c| "▁▂▃▄▅▆▇█".contains(c)),
-            "expected block sparklines at height 20:\n{short}"
+            line.chars().any(|c| "▁▂▃▄▅▆▇█".contains(c)),
+            "expected a block sparkline in the band at height 20: {line}"
         );
         assert!(
-            !short.chars().any(is_braille),
-            "no room for dot graphs at height 20:\n{short}"
+            !line.chars().any(is_braille),
+            "no room for a dot graph at height 20: {line}"
         );
 
         // Tall: dot graphs, and the node table still has usable rows left.
         let tall = render(&app, 130, 30);
         assert!(
-            tall.chars().any(is_braille),
-            "expected dot graphs at height 30:\n{tall}"
+            band_line(&tall).chars().any(is_braille),
+            "expected a dot graph in the band at height 30:\n{tall}"
         );
         assert!(
             tall.lines().filter(|l| l.contains("build0")).count() >= 3,
@@ -1725,11 +1755,14 @@ mod tests {
         for _ in 0..60 {
             app.tick_history();
         }
+        // Band lines only: the node rows carry dot graphs of their own now, and
+        // counting those would pass for the wrong reason.
         let rows_of = |h: u16| {
-            render(&app, 130, h)
-                .lines()
-                .filter(|l| l.chars().any(is_braille))
-                .count()
+            let out = render(&app, 130, h);
+            ["SLOTS", "QUEUE", "RATE"]
+                .iter()
+                .map(|s| series_lines(&out, s).len())
+                .sum::<usize>()
         };
         assert!(
             rows_of(44) > rows_of(30),

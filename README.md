@@ -20,15 +20,15 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                        CPU               MEM            SLOTS      LOAD  SPEED  TEMP                           │
-│build01              ███████████▌  96%! ███████▎░░  72%  ███████▌ 15/16 14.2   3200   78°                           │
-│build02              ███████▍░░░░  61%  █████████▌  96%! █████░░░ 10/16 14.2   2900   71°                           │
-│build03              █████▊░░░░░░  48%  ████▏░░░░░  41%  ████░░░░  8/16 14.2   3100   63°                           │
-│build04              ██▋░░░░░░░░░  22%  ██▋░░░░░░░  26%  ██░░░░░░  4/16 14.2    940!  55°                           │
-│build05              ▌░░░░░░░░░░░   4%  █▊░░░░░░░░  18%  ░░░░░░░░  0/8  14.2   3050   41°                           │
-│build07              ············    —  ··········    —  ░░░░░░░░  0/16    —   3000     —                           │
-│laptop local         █▌░░░░░░░░░░  12%  ██████▎░░░  62%  ▋░░░░░░░  1/12 14.2      —   52°                           │
-│build06 down 0s      ············    —  ··········    —               —    —      —     —                           │
+│NODE                                           SLOTS              IN    OUT LOAD  SPEED  SLOTS 2min                 │
+│build01 cpu!                           ███████████████░ 15/16     15      0 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02 mem!                           ██████████░░░░░░ 10/16     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build03                                ████████░░░░░░░░  8/16      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
+│build04                                ████░░░░░░░░░░░░  4/16      4      0 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build05                                ░░░░░░░░░░░░░░░░  0/8       0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build07                                ░░░░░░░░░░░░░░░░  0/16      0      0    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│laptop local                           █▍░░░░░░░░░░░░░░  1/12      1      0 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build06 down 0s                                             —      —      —    —      —                             │
 │                                                                                                                    │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -42,24 +42,23 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 q quit  ↑↓/jk select  Enter detail  s sort  c m l i by cpu/mem/load/jobs  ? help   selected build02
 ```
 
-Reading it: `build01` is CPU-bound and `build02` memory-bound — the `!` says
-which, without comparing numbers. `build04` is a slow outlier. `build07` has no
-agent, so its resource cells claim nothing. `build06` has dropped out, says how
-long it has been gone, and has sunk to the bottom.
+Reading it: every column is an **Icecream** figure — compile slots, jobs
+compiled here and submitted from here, the scheduler's load, and compile speed.
+A machine's CPU, memory and temperature are its own business and live one
+keypress away in the detail view; what belongs here is the conclusion, so
+`build01` is badged `cpu!` and `build02` `mem!` — the answer to "why is this node
+not taking more work" without the gauges behind it. `build04` is a slow outlier
+and the `!` on its speed says so. `build07` has no agent, so only its load is
+unknown; everything else came from the scheduler. `build06` has dropped out, says
+how long it has been gone, and has sunk to the bottom.
 
-The band answers the whole-cluster questions before the table is read at all,
-and it answers them about **Icecream**: compile slots, scheduler queue depth and
-completion rate. Given vertical room it draws each of the three as a braille dot
-graph — one character is two dots across by four down, so a six-row band has
-twenty-four levels rather than the eight a block sparkline gets. On a short
-terminal the same three series fall back to one-line block sparklines, because a
-single row of braille would be four levels, which is worse. Each graph's axis is
-a fixed two minutes at every width, so a wide terminal draws the same window
-larger rather than showing more of it, and a monitor started ten seconds ago
-fills only the right-hand sliver it has earned.
-
-At a wide terminal each row also carries a two-minute CPU sparkline; narrower
-terminals drop whole columns rather than squeezing every bar into uselessness.
+Each row ends with two minutes of that node's slot occupancy in braille dots.
+One character row is four levels rather than the eight a block sparkline gives,
+but twice the horizontal resolution — for "has this node been busy, and is it
+busier now than a minute ago" that is the better trade, and the exact figure is
+one column to the left. Narrower terminals drop whole columns rather than
+squeezing every one into uselessness; spare width goes to hostnames first,
+because an elided name costs more than a shorter graph.
 
 `Enter` opens the node the overview points at — everything the main screen
 deliberately leaves out:
