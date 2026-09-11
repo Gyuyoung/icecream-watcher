@@ -838,7 +838,7 @@ fn slots_graph_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     let glyphs = graph::area(&samples, 100.0, width, 1);
     Line::from(Span::styled(
         glyphs.into_iter().next().unwrap_or_default(),
-        Style::default().fg(Color::LightBlue),
+        Style::default().fg(widgets::node_colour(node.name())),
     ))
 }
 
@@ -883,10 +883,19 @@ fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
     let badge_width = badge
         .as_ref()
         .map_or(0, |(text, _)| text.chars().count() + 1);
-    let mut spans = vec![Span::raw(elide(
-        node.name(),
-        width.saturating_sub(badge_width),
-    ))];
+    // The name is where the colour is most useful: it is what the eye looks
+    // for when scanning back to a node it was already watching. State still
+    // wins — an offline row is grey whatever colour its name would have been,
+    // because "which machine is this" matters less than "this one is gone".
+    let name_style = if node.offline {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(widgets::node_colour(node.name()))
+    };
+    let mut spans = vec![Span::styled(
+        elide(node.name(), width.saturating_sub(badge_width)),
+        name_style,
+    )];
 
     if let Some((text, colour)) = badge {
         spans.push(Span::styled(
@@ -924,15 +933,13 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     match node.slot_pct() {
         Some(pct) => Line::from(vec![
             Span::styled(
-                widgets::bar(pct, width),
-                Style::default().fg(if pct >= 100.0 {
-                    Color::Cyan
-                } else {
-                    Color::LightBlue
-                }),
+                graph::bar(pct, width),
+                Style::default().fg(widgets::node_colour(node.name())),
             ),
             Span::raw(format!(" {text}")),
         ]),
+        // No slot count at all: a dotted placeholder, which is visibly not a
+        // bar sitting at zero.
         None => Line::from(vec![
             Span::styled(
                 widgets::empty_bar(width),
@@ -943,8 +950,6 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     }
 }
 
-/// Load average, coloured by load *per core*, which is what makes a 4-core and
-/// a 64-core node comparable.
 fn load_cell<'a>(node: &Node) -> Line<'a> {
     let Some(load) = node.load_avg_1() else {
         return dim(format!("{UNKNOWN:>4}"));
@@ -1252,6 +1257,31 @@ mod tests {
         Some((*cols.iter().min()?, *cols.iter().max()?))
     }
 
+    /// Foreground colours used across the row that names `name`.
+    ///
+    /// The text-only `render` helper cannot see styling, and a colour scheme
+    /// that silently stopped being applied would look identical to one that
+    /// works.
+    fn row_colours(app: &App, width: u16, height: u16, name: &str) -> Vec<Color> {
+        let mut ui = Ui::default();
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|f| draw(f, app, &mut ui)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        let row = (0..buf.area.height)
+            .find(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, *y)].symbol().to_owned())
+                    .collect::<String>()
+                    .contains(name)
+            })
+            .unwrap_or_else(|| panic!("no row for {name}"));
+
+        (0..buf.area.width)
+            .map(|x| buf[(x, row)].style().fg.unwrap_or(Color::Reset))
+            .collect()
+    }
+
     fn row_for<'a>(out: &'a str, name: &str) -> &'a str {
         out.lines()
             .find(|l| l.contains(name))
@@ -1307,9 +1337,12 @@ mod tests {
         assert!(out.contains("SLOTS"), "{out}");
         assert!(out.contains("QUEUE"), "{out}");
         assert!(out.contains("RATE"), "{out}");
-        // Occupancy as a figure and as a bar.
+        // Occupancy as a figure, and as two minutes of shape beside it.
         assert!(out.contains("2/24"), "{out}");
-        assert!(out.contains('█'), "expected bars: {out}");
+        assert!(
+            series_lines(&out, "SLOTS").iter().any(|l| l.chars().any(is_braille)),
+            "expected a graph beside the figures: {out}"
+        );
         assert!(out.contains("3 online"), "{out}");
     }
 
@@ -1337,10 +1370,73 @@ mod tests {
     fn nodes_get_bars_not_just_numbers() {
         let out = render(&busy_cluster(), 130, 24);
         let row = row_for(&out, "build01");
-        // A filled bar, a trough, and the figure it stands for.
-        assert!(row.contains('█'), "{row}");
-        assert!(row.contains('░'), "{row}");
+        // A filled part, the baseline showing what it is a fraction of, and the
+        // figure it stands for.
+        assert!(row.contains('⣿'), "no filled bar: {row}");
+        assert!(row.contains('⣀'), "no baseline: {row}");
         assert!(row.contains("1/8"), "{row}");
+    }
+
+    #[test]
+    fn each_node_is_drawn_in_its_own_colour() {
+        // Twelve nodes so the palette is exercised, and so a scheme that
+        // collapsed to one colour could not pass.
+        let mut app = App::new();
+        app.apply(connected());
+        for id in 1..=12u32 {
+            app.apply(stats(
+                id,
+                &format!("Name:build{id:02}\nIP:10.0.0.{id}\nMaxJobs:8\nNoRemote:false\n"),
+            ));
+        }
+
+        let mut seen = std::collections::BTreeSet::new();
+        for id in 1..=12u32 {
+            let name = format!("build{id:02}");
+            let colours = row_colours(&app, 130, 30, &name);
+            // The colour a node is drawn in, taken from the first cell of its
+            // name rather than from anywhere a badge or figure might sit.
+            let first = colours
+                .iter()
+                .find(|c| **c != Color::Reset)
+                .copied()
+                .unwrap_or(Color::Reset);
+            assert!(
+                matches!(first, Color::Indexed(_)),
+                "{name} is not drawn in a node colour: {first:?}"
+            );
+            seen.insert(format!("{first:?}"));
+        }
+        assert!(
+            seen.len() >= 6,
+            "twelve nodes should not share two or three colours, saw {seen:?}"
+        );
+    }
+
+    #[test]
+    fn a_node_keeps_its_colour_when_the_list_is_re_sorted() {
+        // The colour is an identity, so it must follow the node rather than the
+        // row it happens to be in.
+        let mut app = busy_cluster();
+        let before = row_colours(&app, 130, 30, "build03");
+        app.set_sort(crate::app::SortKey::Jobs);
+        let after = row_colours(&app, 130, 30, "build03");
+        assert_eq!(
+            before.iter().find(|c| **c != Color::Reset),
+            after.iter().find(|c| **c != Color::Reset),
+            "build03 changed colour when the table was re-sorted"
+        );
+    }
+
+    #[test]
+    fn an_offline_node_is_grey_whatever_colour_it_would_have_been() {
+        // State beats identity: "this one is gone" matters more than which
+        // machine it was.
+        let mut app = busy_cluster();
+        app.apply(stats(3, "State:Offline\n"));
+        let colours = row_colours(&app, 130, 30, "build03");
+        let first = colours.iter().find(|c| **c != Color::Reset).copied();
+        assert_eq!(first, Some(Color::DarkGray), "{colours:?}");
     }
 
     #[test]
@@ -1419,7 +1515,10 @@ mod tests {
         // Everything in this table comes from the scheduler except LOAD, so a
         // missing agent costs one column and nothing else.
         assert!(row.contains("0/8"), "slots are scheduler data: {row}");
-        assert!(row.contains('░'), "the slot bar should still be drawn: {row}");
+        assert!(
+            row.contains('⣀'),
+            "an empty bar still shows its extent: {row}"
+        );
         assert!(row.contains(UNKNOWN), "load has no source: {row}");
         assert!(out.contains("1 no agent"), "{out}");
     }
@@ -1501,7 +1600,10 @@ mod tests {
         assert!(!tiny.contains("LOAD"), "{tiny}");
         // Slots survive every width, because they are the point.
         assert!(tiny.contains("SLOTS"), "{tiny}");
-        assert!(render(&app, 50, 24).contains('░'), "the bar must survive");
+        assert!(
+            render(&app, 50, 24).chars().any(is_braille),
+            "the bar must survive"
+        );
     }
 
     #[test]

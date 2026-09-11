@@ -910,10 +910,41 @@ costs the reader more than a shorter strip. The graph stops growing at 60 cells,
 where two dot columns per character already draw the whole 120-sample buffer one
 sample to a dot; past that it would only be upscaling.
 
+### Dots and colour in the rows
+
+The slot bar is drawn in dots too. Two dot columns to a character means it
+resolves half a cell, so one slot of twelve is visible where a block bar of the
+same width would round it to nothing; the unfilled part keeps a baseline row
+rather than going blank, so what the filled part is a fraction *of* stays on
+screen.
+
+**Each node is drawn in its own colour**, keyed by a hash of its hostname so the
+colour follows the machine through a re-sort, through other nodes joining and
+leaving, and between sessions — recognising the same node across all of that is
+the entire point, which rules out colouring by row position. FNV-1a rather than
+`DefaultHasher`, whose output is not promised to be stable across Rust versions;
+a colour that changed with the toolchain would defeat the purpose.
+
+The palette was **searched rather than chosen by eye**. The first hand-picked
+list paired colour 39 with 45 — one step apart in the 6×6×6 cube, and the same
+colour to anyone glancing at a row. The search maximises the minimum pairwise
+distance under three constraints: no warm hues, because red, orange, yellow and
+tan carry *state* in this UI and a healthy node that hashed into that range would
+read as a node in trouble; nothing so dark it vanishes on a dark terminal; and no
+greys, which already mean "no measurement". Twelve colours means nodes will share
+one on a large cluster — this is a hint for the eye, not an identifier.
+
+State beats identity: an offline row is grey whatever colour it would have had,
+because "this one is gone" matters more than which machine it was.
+
 ### What was verified, and how
 
 | Claim | Evidence |
 |---|---|
+| the dot bar is honest | exact width at every percentage, clamping, an empty bar still showing its extent, and half a character resolved where a block bar could not |
+| nodes really are drawn differently | twelve nodes rendered and their name colours read back **from the buffer**, not from the text — a scheme that stopped being applied would look identical in a text-only assertion |
+| a colour is an identity | asserted to survive a re-sort, and to lose to grey when the node goes offline |
+| the palette is legible | every entry decoded from the colour cube and asserted to be non-warm, non-grey, bright enough, and at least three cube steps from every other |
 | the table carries cluster figures, not machine ones | the header is asserted to hold SLOTS/IN/OUT/LOAD/SPEED and *not* CPU/MEM/TEMP |
 | the constrained-node answer survived the change | `cpu!` and `mem!` badges asserted on the two constrained rows |
 | a missing agent costs one column, not a row | with no agent, slots, speed and the counters still render from scheduler data; only LOAD is unknown |

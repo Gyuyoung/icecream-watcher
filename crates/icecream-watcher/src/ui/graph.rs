@@ -74,6 +74,34 @@ pub fn area(values: &[f32], max: f32, width: usize, rows: usize) -> Vec<String> 
         .collect()
 }
 
+/// Render `pct` as a horizontal bar `width` characters wide, in braille dots.
+///
+/// Two dot columns to a character, so this resolves twice as finely as a block
+/// bar of the same width. The unfilled part keeps a baseline row of dots rather
+/// than going blank, so the bar's full extent — and therefore what the filled
+/// part is a fraction *of* — stays visible.
+pub fn bar(pct: f32, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let dot_cols = width * CELL_COLS;
+    let filled = (pct.clamp(0.0, 100.0) / 100.0 * dot_cols as f32).round() as usize;
+
+    let mut cells = vec![0u8; width];
+    for x in 0..dot_cols {
+        let column = DOT_BITS[x % CELL_COLS];
+        cells[x / CELL_COLS] |= if x < filled {
+            column.iter().fold(0u8, |acc, bit| acc | bit)
+        } else {
+            column[CELL_ROWS - 1] // baseline only
+        };
+    }
+    cells
+        .into_iter()
+        .map(|bits| char::from_u32(BRAILLE_BASE + bits as u32).unwrap_or(' '))
+        .collect()
+}
+
 /// Colour for character row `r` of an `rows`-tall graph whose axis is a 0..100
 /// utilisation.
 ///
@@ -181,6 +209,39 @@ mod tests {
         assert_ne!(rising, falling, "a cell must carry two samples, not one");
         assert_eq!(rising[0], "⣸", "left baseline only, right full: {rising:?}");
         assert_eq!(falling[0], "⣇", "left full, right baseline only: {falling:?}");
+    }
+
+    #[test]
+    fn a_dot_bar_is_exactly_the_width_asked_for() {
+        for pct in [0.0, 1.0, 33.3, 50.0, 99.9, 100.0] {
+            for width in [1usize, 4, 10, 20] {
+                let b = bar(pct, width);
+                assert_eq!(b.chars().count(), width, "{pct} at {width}: {b:?}");
+            }
+        }
+        assert!(bar(50.0, 0).is_empty());
+    }
+
+    #[test]
+    fn a_dot_bar_shows_its_full_extent_when_empty() {
+        // A blank trough would leave no way to see what the filled part is a
+        // fraction of.
+        assert_eq!(bar(0.0, 4), "⣀⣀⣀⣀");
+        assert_eq!(bar(100.0, 4), "⣿⣿⣿⣿");
+    }
+
+    #[test]
+    fn a_dot_bar_resolves_half_a_character() {
+        // The reason to use dots here: a block bar of this width could only
+        // round 50% to a whole cell either way.
+        assert_eq!(bar(50.0, 1), "⣇", "half of one cell is its left column");
+        assert_eq!(bar(12.5, 4), "⣇⣀⣀⣀");
+    }
+
+    #[test]
+    fn a_dot_bar_clamps_rather_than_overflowing() {
+        assert_eq!(bar(-10.0, 4), bar(0.0, 4));
+        assert_eq!(bar(400.0, 4), bar(100.0, 4));
     }
 
     #[test]

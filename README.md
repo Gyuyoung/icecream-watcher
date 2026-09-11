@@ -4,7 +4,7 @@ A terminal monitor for [Icecream](https://github.com/icecc/icecream) (`icecc`)
 distributed compile clusters — the cluster equivalent of `btop`, where each
 build node reads like a process.
 
-**Status: Phase 6.** Cluster band, bars, history graphs, sorting, keyboard
+**Status: Phase 6.** Cluster band, dot bars and graphs, sorting, keyboard
 navigation, a per-node detail view, and failure handling that keeps the screen
 honest when the cluster or the network misbehaves. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
@@ -21,13 +21,13 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │NODE                                           SLOTS              IN    OUT LOAD  SPEED  SLOTS 2min                 │
-│build01 cpu!                           ███████████████░ 15/16     15      0 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02 mem!                           ██████████░░░░░░ 10/16     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
-│build03                                ████████░░░░░░░░  8/16      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
-│build04                                ████░░░░░░░░░░░░  4/16      4      0 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build05                                ░░░░░░░░░░░░░░░░  0/8       0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build07                                ░░░░░░░░░░░░░░░░  0/16      0      0    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│laptop local                           █▍░░░░░░░░░░░░░░  1/12      1      0 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build01 cpu!                           ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀ 15/16     15      0 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02 mem!                           ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀ 10/16     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build03                                ⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀  8/16      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
+│build04                                ⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  4/16      4      0 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build05                                ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  0/8       0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build07                                ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  0/16      0      0    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│laptop local                           ⣿⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  1/12      1      0 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
 │build06 down 0s                                             —      —      —    —      —                             │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -52,9 +52,22 @@ and the `!` on its speed says so. `build07` has no agent, so only its load is
 unknown; everything else came from the scheduler. `build06` has dropped out, says
 how long it has been gone, and has sunk to the bottom.
 
-Each row ends with two minutes of that node's slot occupancy in braille dots.
-One character row is four levels rather than the eight a block sparkline gives,
-but twice the horizontal resolution — for "has this node been busy, and is it
+Both the slot bar and the two minutes of history that end each row are drawn in
+braille dots. Two dot columns to a character means the bar resolves half a cell
+— `laptop` above is one slot of twelve, and you can see it — and the unfilled
+part keeps a baseline row rather than going blank, so what the filled part is a
+fraction *of* stays visible.
+
+**Each node is drawn in its own colour**, keyed by hostname so it follows the
+machine through a re-sort, through other nodes coming and going, and between
+sessions. The palette is blues, greens, cyans and purples only: red, orange and
+yellow mean *state* here — a problem badge, a saturated metric, a hot sensor — and
+a healthy node that happened to hash into that range would read as a node in
+trouble. State still wins over identity, so an offline row is grey whatever
+colour it would otherwise have had.
+
+The history strip gets one character row, so four levels rather than the eight a
+block sparkline gives, but twice the horizontal resolution — for "has this node been busy, and is it
 busier now than a minute ago" that is the better trade, and the exact figure is
 one column to the left. Narrower terminals drop whole columns rather than
 squeezing every one into uselessness; spare width goes to hostnames first,

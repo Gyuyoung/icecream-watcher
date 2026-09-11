@@ -147,6 +147,41 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
+/// Colours used to tell one node from another.
+///
+/// Chosen by searching the 6×6×6 colour cube for twelve entries that are as far
+/// apart as possible under three constraints, rather than picked by eye:
+///
+/// * **no warm hues.** Red, orange, yellow and tan carry *state* in this UI — a
+///   problem badge, a saturated metric, a hot sensor — and a healthy node that
+///   happened to hash into that range would read as a node in trouble.
+/// * **nothing too dark**, or the name vanishes on a dark terminal.
+/// * **no greys**, which already mean "no measurement".
+///
+/// The first attempt at this list was picked by hand and paired 39 with 45 —
+/// one step apart in the cube, and the same colour to anyone glancing at a row.
+const NODE_COLOURS: [u8; 12] = [27, 38, 42, 67, 87, 93, 118, 127, 141, 151, 201, 225];
+
+/// A stable colour for a node, derived from its name.
+///
+/// Keyed by name rather than by row so a node keeps its colour when the list is
+/// re-sorted, when other nodes come and go, and between sessions — recognising
+/// the same machine across all that is the whole point.
+///
+/// With more nodes than colours, two will share one. This is a hint for the eye,
+/// not an identifier: the name is still the name.
+pub fn node_colour(name: &str) -> Color {
+    // FNV-1a. Small, and stable in a way `DefaultHasher` does not promise
+    // across Rust versions — a colour that changed when the toolchain changed
+    // would defeat the point.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in name.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    Color::Indexed(NODE_COLOURS[(hash % NODE_COLOURS.len() as u64) as usize])
+}
+
 /// A duration at a glance: one unit, no padding.
 ///
 /// `HH:MM:SS` is right where figures are read against each other or against a
@@ -168,6 +203,81 @@ mod tests {
 
     fn count(s: &str, c: char) -> usize {
         s.chars().filter(|&x| x == c).count()
+    }
+
+    #[test]
+    fn a_node_keeps_its_colour() {
+        // The colour is only useful if it is the same one next time.
+        assert_eq!(node_colour("build01"), node_colour("build01"));
+        assert_ne!(
+            node_colour("build01"),
+            node_colour("build02"),
+            "adjacent names should not collide"
+        );
+        // Not sensitive to anything but the name.
+        assert_eq!(node_colour(""), node_colour(""));
+    }
+
+    /// Decode a 256-colour cube index into its 0..5 red, green and blue levels.
+    fn cube_rgb(index: u8) -> (u8, u8, u8) {
+        assert!(
+            (16..232).contains(&index),
+            "colour {index} is outside the 6x6x6 cube: the basic 16 are\n\
+             theme-dependent and the greyscale ramp is not a hue"
+        );
+        let n = index - 16;
+        (n / 36, (n % 36) / 6, n % 6)
+    }
+
+    #[test]
+    fn node_colours_never_borrow_a_colour_that_means_trouble() {
+        // Red, orange and yellow carry state in this UI — a problem badge, a
+        // saturated metric, a hot sensor. A healthy node that hashed into that
+        // range would read as a node in trouble. Those hues are the ones with
+        // almost no blue and plenty of red, so that is what is excluded rather
+        // than a hand-drawn list of indices.
+        for index in NODE_COLOURS {
+            let (r, g, b) = cube_rgb(index);
+            assert!(
+                r < g || r <= b,
+                "colour {index} is ({r},{g},{b}) — red-dominant, so it reads as a warning"
+            );
+            assert!(
+                b > 1 || r < 3 || g < 3,
+                "colour {index} is ({r},{g},{b}) — yellow enough to read as a warning"
+            );
+            assert!(
+                r.max(g).max(b) >= 3 && r + g + b >= 6,
+                "colour {index} is ({r},{g},{b}) — too dark to read on a dark terminal"
+            );
+            assert!(
+                !(r == g && g == b),
+                "colour {index} is grey, which already means \"no measurement\""
+            );
+        }
+    }
+
+    #[test]
+    fn the_node_palette_is_actually_distinguishable() {
+        // Two colours a few cube steps apart are the same colour to a reader
+        // glancing at a row.
+        for (i, a) in NODE_COLOURS.iter().enumerate() {
+            for b in &NODE_COLOURS[i + 1..] {
+                let (ar, ag, ab) = cube_rgb(*a);
+                let (br, bg, bb) = cube_rgb(*b);
+                let distance = ar.abs_diff(br) + ag.abs_diff(bg) + ab.abs_diff(bb);
+                assert!(distance >= 3, "{a} and {b} are too close to tell apart");
+            }
+        }
+    }
+
+    #[test]
+    fn the_node_palette_has_no_duplicates() {
+        let mut seen = NODE_COLOURS.to_vec();
+        seen.sort_unstable();
+        let before = seen.len();
+        seen.dedup();
+        assert_eq!(seen.len(), before, "duplicate colours waste palette slots");
     }
 
     #[test]
