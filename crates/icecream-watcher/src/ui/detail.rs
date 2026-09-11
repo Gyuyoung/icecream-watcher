@@ -1,15 +1,15 @@
 //! Phase 5: the per-node detail view.
 //!
-//! Everything the overview deliberately leaves out lives here — per-core CPU,
-//! frequency, swap, uptime, network, every thermal sensor, the node's Icecream
-//! identity and its job ledger. The overview answers "which node should I look
-//! at"; this answers "what is going on with it".
+//! The overview answers "which node should I look at" and its slot meter says
+//! how many slots are busy and whose work is in them. This answers what follows:
+//! *which file* each slot is compiling and for how long, and everything the
+//! scheduler reports about the node itself.
 //!
 //! Rendered as a flat list of lines and scrolled, rather than as a fixed
 //! layout, so a 128-core machine and a 2-core one both work and nothing is
 //! silently cut off.
 
-use icecc_model::{Cluster, Node, ResourceState};
+use icecc_model::{Cluster, Job, JobState, Node, ResourceState};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -18,10 +18,6 @@ use ratatui::Frame;
 
 use super::widgets;
 use super::UNKNOWN;
-
-/// Width of one per-core entry: `C12 ███████▌ 98%`.
-const CORE_BAR: usize = 8;
-const CORE_ENTRY: usize = 4 + CORE_BAR + 5 + 2;
 
 pub fn draw(frame: &mut Frame, area: Rect, node: &Node, cluster: &Cluster, scroll: u16) {
     let block = Block::bordered().title(title(node));
@@ -76,15 +72,9 @@ pub fn lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>>
 
     out.extend(status_lines(node));
     out.push(Line::raw(""));
-    out.extend(cpu_lines(node, width));
+    out.extend(jobs_lines(node, cluster, width));
     out.push(Line::raw(""));
-    out.extend(memory_lines(node));
-    out.push(Line::raw(""));
-    out.extend(icecream_lines(node, cluster));
-    out.push(Line::raw(""));
-    out.extend(network_lines(node));
-    out.push(Line::raw(""));
-    out.extend(sensor_lines(node, width));
+    out.extend(node_lines(node, cluster));
     out.push(Line::raw(""));
     out.extend(agent_lines(node));
 
@@ -105,7 +95,7 @@ fn status_lines(node: &Node) -> Vec<Line<'static>> {
             out.push(warn(
                 "WRONG HOST?",
                 &format!(
-                    "the agent at {} calls itself {agent:?}, so these metrics may be another machine's",
+                    "the agent at {} calls itself {agent:?}, so its readings may be another machine's",
                     node.ip()
                 ),
             ));
@@ -117,12 +107,13 @@ fn status_lines(node: &Node) -> Vec<Line<'static>> {
             "the scheduler has pinged this node and is still waiting for an answer",
         ));
     }
-    if let Some(reason) = node.resource_state.reason() {
-        let label = match node.resource_state {
-            ResourceState::NoAgent { .. } => "NO AGENT",
-            _ => "AGENT ERROR",
-        };
-        out.push(warn(label, reason));
+    // A missing agent is a deployment gap, not a fault, and nothing on this
+    // panel depends on it any more — it belongs in the agent footnote, not at
+    // the top as though it explained a blank screen.
+    if matches!(node.resource_state, ResourceState::Error { .. }) {
+        if let Some(reason) = node.resource_state.reason() {
+            out.push(warn("AGENT ERROR", reason));
+        }
     }
     if !node.accepts_remote() {
         out.push(note(
@@ -139,151 +130,161 @@ fn status_lines(node: &Node) -> Vec<Line<'static>> {
     out
 }
 
-fn cpu_lines(node: &Node, width: usize) -> Vec<Line<'static>> {
-    let mut out = vec![heading("CPU")];
+/// What each compile slot is actually doing.
+///
+/// The overview's meter says how many slots are busy and whose work is in them;
+/// this says *which file*, which is the question that follows.
+fn jobs_lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>> {
+    let mut out = vec![heading("JOBS")];
 
-    let Some(res) = node.resources.as_ref() else {
-        out.push(unavailable());
-        return out;
-    };
+    let mut running: Vec<&Job> = cluster
+        .jobs
+        .values()
+        .filter(|job| job.state == JobState::Active && job.host_id == Some(node.host_id))
+        .collect();
+    // Longest-running first: "what is taking so long" is why this list is read.
+    running.sort_by(|a, b| a.since.cmp(&b.since).then_with(|| a.id.cmp(&b.id)));
 
-    let mut summary = vec![
-        Span::raw("  "),
-        Span::styled(
-            widgets::bar(res.cpu.total_busy_pct, 20),
-            Style::default().fg(widgets::ramp(res.cpu.total_busy_pct)),
-        ),
-        Span::raw(format!(" {:>3.0}%   ", res.cpu.total_busy_pct)),
-        Span::raw(format!("{} cores", res.cpu.cores)),
-    ];
-    if let Some(mhz) = res.cpu.mean_freq_mhz() {
-        summary.push(Span::styled(
-            format!("  @ {mhz} MHz avg"),
+    if running.is_empty() {
+        out.push(Line::from(Span::styled(
+            if node.offline {
+                "    nothing — the scheduler has lost this node".to_owned()
+            } else {
+                format!("    no remote jobs running ({} slots free)", node.max_jobs())
+            },
             Style::default().add_modifier(Modifier::DIM),
-        ));
-    }
-    out.push(Line::from(summary));
-    out.push(Line::raw(""));
-
-    // Per-core bars, laid out in as many columns as fit.
-    let per_row = (width.saturating_sub(2) / CORE_ENTRY).max(1);
-    for chunk_start in (0..res.cpu.per_core_busy_pct.len()).step_by(per_row) {
-        let mut spans = vec![Span::raw("  ")];
-        for (offset, pct) in res.cpu.per_core_busy_pct[chunk_start..]
-            .iter()
-            .take(per_row)
-            .enumerate()
-        {
-            let index = chunk_start + offset;
-            spans.push(Span::styled(
-                format!("C{index:<2} "),
-                Style::default().add_modifier(Modifier::DIM),
-            ));
-            spans.push(Span::styled(
-                widgets::bar(*pct, CORE_BAR),
-                Style::default().fg(widgets::ramp(*pct)),
-            ));
-            spans.push(Span::raw(format!(" {pct:>3.0}%  ")));
+        )));
+    } else {
+        for (n, job) in running.iter().enumerate() {
+            out.push(job_line(n + 1, job, cluster, width));
         }
-        out.push(Line::from(spans));
+        let free = (node.max_jobs() as usize).saturating_sub(running.len());
+        out.push(Line::from(Span::styled(
+            format!("    {} of {} slots free", free, node.max_jobs()),
+            Style::default().add_modifier(Modifier::DIM),
+        )));
     }
 
-    out.push(Line::raw(""));
-    out.push(field(
-        "load average",
-        format!(
-            "{:.2}  {:.2}  {:.2}",
-            res.load.one, res.load.five, res.load.fifteen
-        ),
-    ));
-    if let Some(per_core) = node.load_per_core() {
-        out.push(field(
-            "per core",
+    // Only jobs this monitor saw start are here: the scheduler replays node
+    // stats on login but not jobs, so anything already compiling when we
+    // attached stays invisible until it finishes.
+    if cluster.totals.unmatched_done > 0 {
+        out.push(Line::from(Span::styled(
             format!(
-                "{per_core:.2}   ({} runnable of {} processes)",
-                res.load.runnable, res.load.total_procs
+                "    ({} job{} elsewhere finished that began before this monitor attached)",
+                cluster.totals.unmatched_done,
+                if cluster.totals.unmatched_done == 1 { "" } else { "s" }
             ),
-        ));
+            Style::default().add_modifier(Modifier::DIM),
+        )));
     }
-    out
-}
 
-fn memory_lines(node: &Node) -> Vec<Line<'static>> {
-    let mut out = vec![heading("MEMORY")];
-
-    let Some(res) = node.resources.as_ref() else {
-        out.push(unavailable());
-        return out;
-    };
-    let mem = &res.mem;
-
-    if let Some(pct) = mem.used_pct() {
-        out.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(
-                widgets::bar(pct, 20),
-                Style::default().fg(widgets::ramp(pct)),
-            ),
-            Span::raw(format!(" {pct:>3.0}%   ")),
-            Span::raw(format!(
-                "{} used of {}",
-                widgets::size_kib(mem.used_kib()),
-                widgets::size_kib(mem.total_kib)
-            )),
-        ]));
-    }
-    out.push(field(
-        "available",
-        format!(
-            "{}   (free {}, buffers {}, cached {})",
-            widgets::size_kib(mem.available_kib),
-            widgets::size_kib(mem.free_kib),
-            widgets::size_kib(mem.buffers_kib),
-            widgets::size_kib(mem.cached_kib),
-        ),
-    ));
-
-    // No swap at all is a fact worth stating, not a zero to imply.
-    match mem.swap_used_pct() {
-        Some(pct) => out.push(field(
-            "swap",
-            format!(
-                "{} of {}   ({pct:.0}%)",
-                widgets::size_kib(mem.swap_used_kib()),
-                widgets::size_kib(mem.swap_total_kib)
-            ),
-        )),
-        None => out.push(field("swap", "none configured".to_owned())),
-    }
-    out
-}
-
-fn icecream_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
-    let mut out = vec![heading("ICECREAM")];
-
-    out.push(field(
-        "compile slots",
-        format!("{} of {} in use", node.current_jobs(), node.max_jobs()),
-    ));
     if !node.local_jobs.is_empty() {
+        out.push(Line::raw(""));
         out.push(field(
             "local jobs",
             format!(
-                "{} running here, occupying no scheduler slot",
+                "{} compiling here for itself, occupying no scheduler slot",
                 node.local_jobs.len()
             ),
         ));
     }
-    out.push(field(
-        "queued from here",
-        cluster.pending_from(node.host_id).to_string(),
-    ));
 
+    let waiting = cluster.pending_from(node.host_id);
+    if waiting > 0 {
+        out.push(Line::raw(""));
+        out.push(field(
+            "queued from here",
+            format!("{waiting} waiting for a compile host"),
+        ));
+    }
+    out
+}
+
+/// `Job  3  ( 32.5s)  path/to/file.cc  · from build02`
+fn job_line(n: usize, job: &Job, cluster: &Cluster, width: usize) -> Line<'static> {
+    let client = job
+        .client_id
+        .and_then(|id| cluster.nodes.get(&id))
+        .map(|node| node.name().to_owned());
+
+    let mut spans = vec![
+        Span::styled(
+            format!("    Job {n:>3}  "),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::styled(
+            format!("({:>7})  ", elapsed(job.since.elapsed())),
+            Style::default().fg(Color::Cyan),
+        ),
+    ];
+
+    // Budget the trailing attribution before eliding the name, so the answer to
+    // "whose job is this" is not the part that gets cut.
+    let tail = client.as_ref().map_or(0, |c| c.chars().count() + 9);
+    let room = width.saturating_sub(4 + 9 + 11 + tail);
+    let name = if job.filename.is_empty() {
+        // We saw MON_JOB_BEGIN but not the MON_GET_CS that carries the name.
+        "(name not seen)".to_owned()
+    } else {
+        super::elide(&job.filename, room.max(8))
+    };
+    spans.push(Span::raw(name));
+
+    if let Some(client) = client {
+        spans.push(Span::styled(
+            "  · from ".to_owned(),
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        spans.push(Span::styled(
+            client.clone(),
+            Style::default().fg(widgets::node_colour(&client)),
+        ));
+    }
+    Line::from(spans)
+}
+
+/// How long a job has been running, to the precision a compile deserves.
+fn elapsed(d: std::time::Duration) -> String {
+    let secs = d.as_secs_f64();
+    if secs < 60.0 {
+        format!("{secs:.1}s")
+    } else {
+        format!("{}m {:02}s", (secs / 60.0) as u64, (secs % 60.0) as u64)
+    }
+}
+
+/// Everything the scheduler reports about this node, plus what we have counted.
+fn node_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
+    let mut out = vec![heading("NODE")];
+
+    out.push(field("name", node.name().to_owned()));
+    out.push(field("IP", node.ip().to_owned()));
+    out.push(field("platform", node.platform().to_owned()));
+    out.push(field(
+        "protocol",
+        node.stats
+            .protocol
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| UNKNOWN.into()),
+    ));
+    out.push(field(
+        "features",
+        node.stats
+            .features
+            .clone()
+            .unwrap_or_else(|| UNKNOWN.into()),
+    ));
+    out.push(field("max jobs", node.max_jobs().to_string()));
+    out.push(field(
+        "accepts remote",
+        if node.accepts_remote() { "yes" } else { "no" }.to_owned(),
+    ));
     out.push(field(
         "speed",
         match node.speed() {
             Some(s) => {
-                let mut text = format!("{s:.0} output bytes per user-second");
+                let mut text = format!("{s:.1} output bytes per user-second");
                 if cluster.is_slow_outlier(node) {
                     if let Some(median) = cluster.median_speed() {
                         text.push_str(&format!("  — well below the cluster median of {median:.0}"));
@@ -294,8 +295,19 @@ fn icecream_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
             None => "unknown until this node compiles something".to_owned(),
         },
     ));
+    out.push(field(
+        "load",
+        match node.stats.load {
+            // Spelled out because the name invites the wrong reading: this is
+            // the scheduler's placement weight, not CPU utilisation.
+            Some(load) => format!("{load} of 1000 — the scheduler's placement weight"),
+            None => UNKNOWN.to_owned(),
+        },
+    ));
+    out.push(field("load average", load_averages(node)));
+    out.push(field("free memory", free_memory(node)));
 
-    // Since connect, because job ids only mean anything within one session.
+    out.push(Line::raw(""));
     out.push(field(
         "jobs in",
         format!("{} compiled here for others", node.jobs_in),
@@ -312,123 +324,77 @@ fn icecream_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
         "    (job counts are since this monitor connected)",
         Style::default().add_modifier(Modifier::DIM),
     )));
-
-    if let Some(features) = node.stats.features.as_deref() {
-        out.push(field("features", features.to_owned()));
-    }
     out
 }
 
-fn network_lines(node: &Node) -> Vec<Line<'static>> {
-    let mut out = vec![heading("NETWORK")];
-
-    let Some(res) = node.resources.as_ref() else {
-        out.push(unavailable());
-        return out;
-    };
-
-    out.push(field(
-        "total",
-        format!(
-            "rx {}   tx {}",
-            widgets::rate(res.net.rx_bytes_per_sec),
-            widgets::rate(res.net.tx_bytes_per_sec)
-        ),
-    ));
-    for iface in &res.net.interfaces {
-        out.push(field(
-            &iface.name,
-            format!(
-                "rx {}   tx {}",
-                widgets::rate(iface.rx_bytes_per_sec),
-                widgets::rate(iface.tx_bytes_per_sec)
-            ),
-        ));
-    }
-    out.push(field("uptime", widgets::duration(res.uptime_secs)));
-    out
-}
-
-fn sensor_lines(node: &Node, width: usize) -> Vec<Line<'static>> {
-    let mut out = vec![heading("SENSORS")];
-
-    let Some(res) = node.resources.as_ref() else {
-        out.push(unavailable());
-        return out;
-    };
-
-    match (&res.thermal.cpu_celsius, &res.thermal.cpu_source) {
-        (Some(t), Some(source)) => out.push(Line::from(vec![
-            Span::raw("    cpu package    "),
-            Span::styled(
-                format!("{t:>3.0}°C"),
-                Style::default().fg(widgets::temp_ramp(*t)),
-            ),
-            // Naming the sensor matters: hosts disagree between their own by
-            // more than 20 °C, so an unattributed number is not evidence.
-            Span::styled(
-                format!("   from {source}"),
-                Style::default().add_modifier(Modifier::DIM),
-            ),
-        ])),
-        _ => out.push(field("cpu package", "no sensor identified".to_owned())),
-    }
-
-    if res.thermal.sensors.is_empty() {
-        return out;
-    }
-    out.push(Line::raw(""));
-
-    // Two per line where there is room; the list can be long.
-    let entry = 34usize;
-    let per_row = (width.saturating_sub(4) / entry).max(1);
-    for chunk in res.thermal.sensors.chunks(per_row) {
-        let mut spans = vec![Span::raw("    ")];
-        for sensor in chunk {
-            spans.push(Span::styled(
-                format!("{:<24}", super::elide(&sensor.label, 24)),
-                Style::default().add_modifier(Modifier::DIM),
-            ));
-            spans.push(Span::styled(
-                format!("{:>3.0}°  ", sensor.celsius),
-                Style::default().fg(widgets::temp_ramp(sensor.celsius)),
-            ));
+fn load_averages(node: &Node) -> String {
+    let stats = &node.stats;
+    match (stats.load_avg_1, stats.load_avg_5, stats.load_avg_10) {
+        (Some(one), Some(five), Some(ten)) => {
+            format!("{one:.2}  {five:.2}  {ten:.2}   (1 / 5 / 10 min)")
         }
-        out.push(Line::from(spans));
+        _ => UNKNOWN.to_owned(),
     }
-    out
 }
 
+/// `FreeMem`, which the protocol documents as MiB but not every daemon sends
+/// that way.
+///
+/// A Linux daemon's figure matches `free -m`; a macOS daemon in the test cluster
+/// sends what can only be KiB — 5 647 912 would be 5.4 TiB as MiB and is a
+/// plausible 5.4 GiB as KiB (ARCHITECTURE §9). Rendering the documented unit
+/// regardless would put terabytes of free memory on a laptop, so an implausible
+/// figure is labelled rather than converted: guessing the unit silently is how
+/// the trap was set in the first place.
+fn free_memory(node: &Node) -> String {
+    let Some(mib) = node.stats.free_mem_mib else {
+        return UNKNOWN.to_owned();
+    };
+    // A machine with more than a terabyte of free memory is not what this is.
+    if mib > 1024 * 1024 {
+        format!(
+            "{mib} as reported — implausible as MiB, likely KiB ({} MiB)",
+            mib / 1024
+        )
+    } else {
+        format!("{mib} MiB available")
+    }
+}
+
+/// A footnote, not a section: the agent no longer feeds this panel. It is what
+/// the `cpu!` and `mem!` badges on the overview are computed from, so there has
+/// to be somewhere to see the figures behind them.
 fn agent_lines(node: &Node) -> Vec<Line<'static>> {
     let mut out = vec![heading("AGENT")];
 
     match node.resources.as_ref() {
         Some(res) => {
             out.push(field(
-                "version",
-                format!("icecream-watcher-agent {}", res.agent_version),
+                "reported",
+                format!(
+                    "{:.0}% CPU, {} memory in use — what the overview badges read",
+                    res.cpu.total_busy_pct,
+                    node.mem_pct()
+                        .map(|p| format!("{p:.0}%"))
+                        .unwrap_or_else(|| UNKNOWN.into()),
+                ),
             ));
             out.push(field(
-                "sample window",
-                format!("{} ms", res.sample_interval_ms),
+                "agent",
+                format!(
+                    "icecream-watcher-agent {} on {}, last answered {}",
+                    res.agent_version,
+                    res.hostname,
+                    match node.resources_at {
+                        Some(at) => format!("{:.1} s ago", at.elapsed().as_secs_f32()),
+                        None => UNKNOWN.to_owned(),
+                    }
+                ),
             ));
-            out.push(field(
-                "last reply",
-                match node.resources_at {
-                    Some(at) => format!("{:.1} s ago", at.elapsed().as_secs_f32()),
-                    None => UNKNOWN.to_owned(),
-                },
-            ));
-            out.push(field("reported hostname", res.hostname.clone()));
-            out.push(field("reported addresses", res.addresses.join(", ")));
         }
         None => {
             out.push(Line::from(Span::styled(
-                "    no agent has answered on this node",
-                Style::default().add_modifier(Modifier::DIM),
-            )));
-            out.push(Line::from(Span::styled(
-                "    install icecream-watcher-agent for CPU, memory, temperature and network",
+                "    no agent here — the overview cannot badge this node as CPU- or memory-bound",
                 Style::default().add_modifier(Modifier::DIM),
             )));
         }
@@ -484,9 +450,3 @@ fn note(label: &str, detail: &str) -> Line<'static> {
     ])
 }
 
-fn unavailable() -> Line<'static> {
-    Line::from(Span::styled(
-        "    not measured — needs icecream-watcher-agent on this node",
-        Style::default().fg(Color::DarkGray),
-    ))
-}

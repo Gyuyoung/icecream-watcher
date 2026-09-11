@@ -20,15 +20,15 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                                    CUR  MAX SLOTS                IN    OUT LOAD  SPEED  SLOTS 2min             │
-│build01 cpu!                             15   16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02 mem!                             10   16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⢰⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
-│build03                                   8   16 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⢠⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
-│build04                                   4   16 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      4      9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build05                                   0    8 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build07                                   0   16 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│laptop local                              1   12 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build06 down 0s                           —    —                       —      —    —      —                         │
+│NODE                                   ACTIVE    MAX JOBS                 IN    OUT LOAD  SPEED  JOBS 2min          │
+│build01 cpu!                               15     16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02 mem!                               10     16 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build03                                     8     16 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
+│build04                                     4     16 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      4      9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build05                                     0      8 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build07                                     0     16 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│laptop local                                1     12 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build06 down 0s                             —      —                       —      —    —      —                     │
 │                                                                                                                    │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -44,16 +44,17 @@ q quit  ↑↓/jk select  Enter detail  s sort  c m l i by cpu/mem/load/jobs  ? 
 
 Reading it: every column is an **Icecream** figure — compile slots, jobs
 compiled here and submitted from here, the scheduler's load, and compile speed.
-A machine's CPU, memory and temperature are its own business and live one
-keypress away in the detail view; what belongs here is the conclusion, so
-`build01` is badged `cpu!` and `build02` `mem!` — the answer to "why is this node
-not taking more work" without the gauges behind it. `build04` is a slow outlier
+A machine's CPU, memory and temperature are its own business and appear nowhere
+but as the conclusion drawn from them: `build01` is badged `cpu!` and `build02`
+`mem!`, the answer to "why is this node not taking more work" without the gauges
+behind it. `build04` is a slow outlier
 and the `!` on its speed says so. `build07` has no agent, so only its load is
 unknown; everything else came from the scheduler. `build06` has dropped out, says
 how long it has been gone, and has sunk to the bottom.
 
-`CUR` and `MAX` carry the slot counts as plain numbers, and the meter beside
-them gives **one cell per slot**, so slots can be counted rather than estimated.
+`ACTIVE` and `MAX` carry the job counts as plain numbers, and the `JOBS` meter
+beside them gives **one cell per slot**, so slots can be counted rather than
+estimated.
 A busy slot is a filled dot-column with the baseline carrying on to its right —
 a bar with a gap built in — so a run of them stays countable instead of merging
 into one block, and each is coloured by the node that *submitted* the job, the
@@ -78,42 +79,55 @@ the exact figure is one column to the left. Narrower terminals drop whole column
 squeezing every one into uselessness; spare width goes to hostnames first,
 because an elided name costs more than a shorter graph.
 
-`Enter` opens the node the overview points at — everything the main screen
-deliberately leaves out:
+`Enter` opens the node the overview points at. The meter says how many slots are
+busy and whose work is in them; this says **which file each slot is compiling**,
+for how long, and everything the scheduler reports about the node itself:
 
 ```
 icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] help
-┌ build02  10.0.0.2  ?  proto — ─────────────────────────────────────────────────────────────────────────────────────┐
+┌ build02  10.0.0.2  x86_64  proto 43 ───────────────────────────────────────────────────────────────────────────────┐
 │  healthy                                                                                                           │
 │                                                                                                                    │
-│CPU                                                                                                                 │
-│  ████████████▎░░░░░░░  61%   8 cores                                                                               │
+│JOBS                                                                                                                │
+│    Job   1  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job   2  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   3  (   0.0s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
+│    Job   4  (   0.0s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
+│    Job   5  (   0.0s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
+│    Job   6  (   0.0s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
+│    Job   7  (   0.0s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
+│    Job   8  (   0.0s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
+│    Job   9  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job  10  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    6 of 16 slots free                                                                                              │
 │                                                                                                                    │
-│  C0  ████▉░░░  61%  C1  ████▉░░░  61%  C2  ████▉░░░  61%  C3  ████▉░░░  61%  C4  ████▉░░░  61%  C5  ████▉░░░  61%  │
-│  C6  ████▉░░░  61%  C7  ████▉░░░  61%                                                                              │
-│                                                                                                                    │
-│    load average      14.20  12.00  9.00                                                                            │
-│    per core          1.77   (8 runnable of 500 processes)                                                          │
-│                                                                                                                    │
-│MEMORY                                                                                                              │
-│  ███████████████████▏  96%   955 KiB used of 1000 KiB                                                              │
-│    available         45 KiB   (free 45 KiB, buffers 0 KiB, cached 0 KiB)                                           │
-│    swap              none configured                                                                               │
-│                                                                                                                    │
-│ICECREAM                                                                                                            │
-│    compile slots     10 of 16 in use                                                                               │
-│    queued from here  0                                                                                             │
-│    speed             2900 output bytes per user-second                                                             │
-│    jobs in           10 compiled here for others                                                                   │
-│    jobs out          0 submitted and compiled elsewhere                                                            │
+│NODE                                                                                                                │
+│    name              build02                                                                                       │
+│    IP                10.0.0.2                                                                                      │
+│    platform          x86_64                                                                                        │
+│    protocol          43                                                                                            │
+│    features          env_xz env_zstd                                                                               │
+│    max jobs          16                                                                                            │
+│    accepts remote    yes                                                                                           │
+│    speed             2900.0 output bytes per user-second                                                           │
+│    load              610 of 1000 — the scheduler's placement weight                                                │
+│    load average      8.54  8.54  8.54   (1 / 5 / 10 min)                                                           │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 Esc back  ↑↓/jk scroll  q quit   build02
 ```
 
-Below the fold it continues with network throughput per interface, uptime, every
-thermal sensor the node exposes, and which agent answered. Anything wrong with
-the node — offline, no agent, a hostname that does not match — is stated at the
-top, before the numbers it would explain.
+Below the fold the `NODE` section continues with free memory and the job counters
+since this monitor connected, and ends with a footnote naming the agent — the
+only thing it is still used for is the `cpu!` / `mem!` badges, so there has to be
+somewhere to see the figures behind them. Anything wrong with the node — offline,
+no ack from the scheduler, a hostname that does not match — is stated at the top,
+before the numbers it would explain.
+
+Only jobs this monitor saw *start* appear in the list. The scheduler replays node
+stats when a monitor logs in but not jobs, so anything already compiling when you
+attached stays invisible until it finishes, and the panel says how many of those
+it has seen end.
+
 ## Build
 
 Needs a Rust toolchain (1.75+). No `libicecc` and no C++ build dependencies —

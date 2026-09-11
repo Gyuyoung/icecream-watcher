@@ -1,6 +1,7 @@
 # icecream-watcher — Architecture (Phase 1: Research)
 
-Status: **Phase 1 research complete; Phases 2–6 implemented** (see §8).
+Status: **Phase 1 research complete; Phases 2–6 implemented** (see §8), with the
+UI reworked around Icecream data in §8e–§8g.
 Decisions approved 2026-09-10: **Rust + ratatui/crossterm/tokio**, **Tier 0+1** collection (§4, §5).
 Target: a btop-class TUI for monitoring an Icecream (icecc) distributed compile cluster.
 
@@ -975,6 +976,61 @@ because "this one is gone" matters more than which machine it was.
 | graphs stay aligned | every row of every series asserted to occupy identical columns, at three terminal heights |
 | the fallback is by height, not by taste | block sparklines and no braille at 24 rows; braille at 30, with the node table still showing its rows |
 | it renders on a real cluster | attached to the live two-node cluster during an actual `cargo` build: slots 24/24, queue 76 and rising, 5 completions a second |
+
+## 8g. The detail view, rebuilt around jobs — **done**
+
+Phase 5 built this panel around the machine: per-core CPU, swap, uptime, network,
+every thermal sensor. That was the wrong subject for a compile-cluster monitor,
+and it went the same way the table's CPU and memory columns did.
+
+What it answers now is the question the overview's slot meter raises. The meter
+says how many slots are busy and, by colour, whose work is in them; the panel
+says **which file each slot is compiling and for how long**, and then everything
+the scheduler reports about the node — name, address, platform, protocol,
+features, max jobs, whether it accepts remote work, speed, the scheduler's load
+figure, load averages and free memory — the way `icecream-sundae` presents an
+expanded node.
+
+Decisions worth recording:
+
+* **Elapsed time is honest by construction.** Every job in the model was seen to
+  begin: the scheduler replays node stats on login but not jobs, so a job already
+  compiling when the monitor attached is invisible until its `MON_JOB_DONE`
+  arrives. That makes "since we saw it start" the same as "since it started" for
+  everything listed — and the panel says how many *un*seen jobs have finished, so
+  the gap is stated rather than hidden.
+* **`Load` is spelled out as what it is.** The protocol's `Load` is the
+  scheduler's placement weight, not CPU utilisation, and the field name invites
+  exactly the wrong reading — so the value is rendered `772 of 1000 — the
+  scheduler's placement weight`.
+* **`FreeMem` is labelled, not converted.** §9's open question is now visible on
+  screen rather than only in this document: a figure too large to be the MiB the
+  protocol documents is shown raw and marked as probably KiB, with the converted
+  value beside it. Silently guessing the unit is how the trap was set.
+* **A job with no name says so.** `MON_JOB_BEGIN` carries no filename; it comes
+  from the `MON_GET_CS` before it, which is missed if the monitor attaches in
+  between. That renders as `(name not seen)` rather than an empty cell.
+* **The agent is a footnote now.** Nothing on this panel comes from it. It is
+  kept because the overview's `cpu!` and `mem!` badges are computed from it, and
+  a badge with no way to see the figure behind it is worse than no badge.
+
+Removed with the sections they served: the per-core bar layout, the temperature
+ramp, and the byte-rate and kibibyte formatters.
+
+### What was verified, and how
+
+| Claim | Evidence |
+|---|---|
+| each slot names its file and its submitter | asserted on the rendered line, including the numbering and the free-slot count |
+| an unnamed job is explained, not blank | a `MON_JOB_BEGIN` with no preceding `MON_GET_CS` renders `(name not seen)` |
+| an idle node says so | "no remote jobs running (8 slots free)" rather than an empty section |
+| a long path cannot overflow the line | 64 jobs with deeply nested paths, every rendered line asserted within the terminal |
+| the load figure cannot be misread as CPU | asserted to carry "of 1000" and "placement weight" |
+| the memory-unit trap is on screen | the macOS figure renders raw and marked KiB; the Linux figure renders as MiB |
+
+The note explaining the memory unit was written long enough to be **truncated at
+the panel edge** — found by asserting on the rendered buffer, which is the only
+place that kind of mistake shows up.
 
 ## 9. Open questions for Phase 2+
 

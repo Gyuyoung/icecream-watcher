@@ -669,11 +669,15 @@ fn columns(width: u16) -> Columns {
     // little slack so the graph never collides with the right-hand border.
     let mut spare = (width as usize).saturating_sub(fixed + 6);
 
-    // Names come first: an elided hostname costs the reader more than a shorter
-    // graph does, and build hosts are often named at length.
-    let widen = spare.min(NAME_MAX.saturating_sub(cols.name as usize));
-    cols.name += widen as u16;
-    spare -= widen;
+    // Names come first with space going spare: an elided hostname costs the
+    // reader more than a shorter graph does, and build hosts are often named at
+    // length. Only once every column already fits, though — on a narrow
+    // terminal the same rule hands most of the screen to one column.
+    if width >= 108 {
+        let widen = (spare / 2).min(NAME_MAX.saturating_sub(cols.name as usize));
+        cols.name += widen as u16;
+        spare -= widen;
+    }
 
     if spare >= MIN_GRAPH {
         cols.graph = spare.min(MAX_GRAPH);
@@ -681,8 +685,8 @@ fn columns(width: u16) -> Columns {
     cols
 }
 
-/// Width of the `CUR` and `MAX` slot-count columns.
-const COUNT_WIDTH: u16 = 4;
+/// Width of the `ACTIVE` and `MAX` job-count columns.
+const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 6;
 const LOAD_WIDTH: u16 = 5;
 const SPEED_WIDTH: u16 = 6;
@@ -703,10 +707,18 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
 
     let mut header = vec![Cell::from("NODE")];
     if cols.cur_max {
-        header.push(Cell::from(format!("{:>width$}", "CUR", width = COUNT_WIDTH as usize)));
-        header.push(Cell::from(format!("{:>width$}", "MAX", width = COUNT_WIDTH as usize)));
+        header.push(Cell::from(format!(
+            "{:>width$}",
+            "ACTIVE",
+            width = COUNT_WIDTH as usize
+        )));
+        header.push(Cell::from(format!(
+            "{:>width$}",
+            "MAX",
+            width = COUNT_WIDTH as usize
+        )));
     }
-    header.push(Cell::from(format!("{:<width$}", "SLOTS", width = cols.slot_bar)));
+    header.push(Cell::from(format!("{:<width$}", "JOBS", width = cols.slot_bar)));
     if cols.jobs {
         header.push(Cell::from(format!("{:>width$}", "IN", width = JOBS_WIDTH as usize)));
         header.push(Cell::from(format!("{:>width$}", "OUT", width = JOBS_WIDTH as usize)));
@@ -718,7 +730,7 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         header.push(Cell::from("SPEED"));
     }
     if cols.graph > 0 {
-        header.push(Cell::from("SLOTS 2min"));
+        header.push(Cell::from("JOBS 2min"));
     }
 
     let rows: Vec<Row> = app
@@ -1335,6 +1347,24 @@ mod tests {
             .collect()
     }
 
+    /// The two figures immediately left of the meter: ACTIVE and MAX. Read by
+    /// position rather than by exact spacing, so a column width change is not a
+    /// test failure.
+    fn counts_before_meter(row: &str) -> Vec<String> {
+        let head: String = row
+            .chars()
+            .take_while(|c| *c != SLOT_BUSY && *c != SLOT_FREE && *c != '⣿')
+            .collect();
+        let tokens: Vec<&str> = head.split_whitespace().collect();
+        tokens
+            .iter()
+            .rev()
+            .take(2)
+            .rev()
+            .map(|t| (*t).to_owned())
+            .collect()
+    }
+
     /// The slot meter on a row: the first run of slot glyphs, which stops at
     /// the padding before the next column. Counting these across the whole row
     /// would also count the history graph's baseline dots.
@@ -1435,7 +1465,7 @@ mod tests {
         let row = row_for(&out, "build01");
         // One slot busy, the rest drawn but free, and the figures beside them.
         assert_eq!(slot_meter(row), "⣇⣀⣀⣀⣀⣀⣀⣀", "{row}");
-        assert!(row.contains("   1    8"), "CUR and MAX: {row}");
+        assert_eq!(counts_before_meter(row), ["1", "8"], "ACTIVE and MAX: {row}");
     }
 
     #[test]
@@ -1528,17 +1558,20 @@ mod tests {
         let out = render(&app, 130, 24);
         let row = row_for(&out, "big");
         assert!(row.contains('⣿'), "expected a proportional bar: {row}");
-        assert!(row.contains("  64  128"), "the figures must carry it: {row}");
+        assert_eq!(counts_before_meter(row), ["64", "128"], "{row}");
     }
 
     #[test]
-    fn cur_and_max_are_plain_numbers_beside_the_meter() {
+    fn active_and_max_are_plain_numbers_beside_the_meter() {
         let out = render(&busy_cluster(), 130, 24);
         let header = out.lines().find(|l| l.contains("NODE")).unwrap();
-        let cur = header.find("CUR").expect("CUR column");
+        let active = header.find("ACTIVE").expect("ACTIVE column");
         let max = header.find("MAX").expect("MAX column");
-        let slots = header.find("SLOTS").expect("SLOTS column");
-        assert!(cur < max && max < slots, "order should read CUR MAX SLOTS: {header}");
+        let jobs = header.find("JOBS").expect("JOBS column");
+        assert!(
+            active < max && max < jobs,
+            "order should read ACTIVE MAX JOBS: {header}"
+        );
     }
 
     #[test]
@@ -1614,7 +1647,7 @@ mod tests {
             .lines()
             .find(|l| l.contains("NODE"))
             .expect("header row");
-        for icecream in ["SLOTS", "IN", "OUT", "LOAD", "SPEED"] {
+        for icecream in ["ACTIVE", "MAX", "JOBS", "IN", "OUT", "LOAD", "SPEED"] {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
@@ -1642,7 +1675,7 @@ mod tests {
     #[test]
     fn a_node_history_graph_appears_when_there_is_room() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(out.contains("SLOTS 2min"), "{out}");
+        assert!(out.contains("JOBS 2min"), "{out}");
 
         // A working node has drawn dots; an idle one has a measured zero, not a
         // blank — and both differ from a node that is not drawn at all.
@@ -1763,7 +1796,7 @@ mod tests {
         let tiny = header_of(50);
         assert!(!tiny.contains("LOAD"), "{tiny}");
         // Slots survive every width, because they are the point.
-        assert!(tiny.contains("SLOTS"), "{tiny}");
+        assert!(tiny.contains("JOBS"), "{tiny}");
         assert!(
             render(&app, 50, 24).chars().any(is_braille),
             "the bar must survive"
@@ -2087,6 +2120,18 @@ mod tests {
     #[test]
     #[ignore]
     fn screenshot() {
+        /// Real-looking translation units, so the detail view shows what it
+        /// looks like against a build rather than one filename repeated.
+        const SOURCES: [&str; 8] = [
+            "mojom/sensor/web_sensor_provider.mojom-blink.cc",
+            "mojom/smart_card/smart_card.mojom-blink.cc",
+            "renderer/modules/webaudio/audio_worklet_processor.cc",
+            "renderer/core/layout/layout_block_flow.cc",
+            "mojom/serial/serial.mojom-blink.cc",
+            "renderer/platform/graphics/paint/paint_controller.cc",
+            "renderer/core/css/resolver/style_resolver.cc",
+            "mojom/speculation_rules/speculation_rules.mojom-blink.cc",
+        ];
         let mut app = App::new();
         app.apply(connected());
         let nodes: [(u32, &str, u32, f32, u64, f32, f64); 6] = [
@@ -2102,7 +2147,11 @@ mod tests {
             app.apply(stats(
                 id,
                 &format!(
-                    "Name:{name}\nIP:10.0.0.{id}\nMaxJobs:{max}\nNoRemote:{remote}\nSpeed:{speed}\n"
+                    "Name:{name}\nIP:10.0.0.{id}\nMaxJobs:{max}\nNoRemote:{remote}\nSpeed:{speed}\n\
+                     Platform:x86_64\nVersion:43\nFeatures:env_xz env_zstd\n\
+                     Load:{load}\nLoadAvg1:{avg}\nLoadAvg5:{avg}\nLoadAvg10:{avg}\nFreeMem:36732\n",
+                    load = (cpu * 10.0) as u32,
+                    avg = (cpu * 140.0) as u32,
                 ),
             ));
             app.apply_resource(id, ResourceResult::Ok(snapshot(name, cpu, mem, Some(temp))));
@@ -2129,7 +2178,7 @@ mod tests {
                 app.apply(Update::Event(Event::GetCs {
                     job_id: job,
                     client_id: clients[(n as usize + id as usize) % clients.len()],
-                    filename: "widget.cpp".into(),
+                    filename: SOURCES[(job as usize) % SOURCES.len()].to_owned(),
                     lang: 1,
                 }));
                 app.apply(Update::Event(Event::JobBegin {
@@ -2157,7 +2206,7 @@ mod tests {
 
         // …and the detail view for the node the overview points at.
         app.on_key(crate::app::Key::Enter);
-        println!("\n--- detail ---\n{}", render(&app, 118, 26));
+        println!("\n--- detail ---\n{}", render(&app, 118, 30));
     }
 
     // ---- Phase 5: the detail view ----
@@ -2215,33 +2264,133 @@ mod tests {
         let mut app = busy_cluster();
         detail_of(&mut app, "build01");
         let out = detail_text(&app);
-        for section in ["CPU", "MEMORY", "ICECREAM", "NETWORK", "SENSORS", "AGENT"] {
+        for section in ["JOBS", "NODE", "AGENT"] {
             assert!(out.contains(section), "missing {section}:\n{out}");
         }
-        // Per-core bars, one entry per core.
-        assert!(out.contains("C0 "), "{out}");
-        assert!(out.contains("C7 "), "{out}");
-        assert!(out.contains("load average"), "{out}");
-        assert!(out.contains("swap"), "{out}");
-        assert!(out.contains("uptime"), "{out}");
-        assert!(out.contains("jobs in"), "{out}");
-        assert!(out.contains("jobs out"), "{out}");
+        // Everything the scheduler says about the node.
+        for field in [
+            "name", "IP", "platform", "protocol", "features", "max jobs",
+            "speed", "load", "load average", "free memory", "jobs in", "jobs out",
+        ] {
+            assert!(out.contains(field), "missing {field}:\n{out}");
+        }
     }
 
     #[test]
-    fn the_temperature_names_the_sensor_it_came_from() {
-        let mut app = busy_cluster();
-        detail_of(&mut app, "build01");
-        let out = detail_text(&app);
-        assert!(
-            out.contains("coretemp/Package id 0"),
-            "an unattributed temperature is not evidence:\n{out}"
-        );
+    fn each_slot_names_the_file_it_is_compiling_and_who_asked() {
+        // The overview's meter says how many slots are busy and whose work is in
+        // them; this is the question that follows.
+        let mut app = App::new();
+        app.apply(connected());
+        for id in 1..=2u32 {
+            app.apply(stats(
+                id,
+                &format!("Name:build{id:02}\nIP:10.0.0.{id}\nMaxJobs:8\nNoRemote:false\n"),
+            ));
+        }
+        app.apply(Update::Event(Event::GetCs {
+            job_id: 900,
+            client_id: 2,
+            filename: "mojom/sensor/web_sensor_provider.mojom-blink.cc".into(),
+            lang: 1,
+        }));
+        app.apply(Update::Event(Event::JobBegin {
+            job_id: 900,
+            start_time: 0,
+            host_id: 1,
+        }));
+
+        let out = detail_of(&mut app, "build01");
+        assert!(out.contains("Job   1"), "jobs should be numbered:\n{out}");
+        assert!(out.contains("web_sensor_provider"), "{out}");
+        assert!(out.contains("from build02"), "the submitter:\n{out}");
+        assert!(out.contains("7 of 8 slots free"), "{out}");
+    }
+
+    #[test]
+    fn a_job_whose_name_was_never_seen_says_so_rather_than_showing_a_blank() {
+        // MON_JOB_BEGIN carries no filename; it comes from the MON_GET_CS that
+        // precedes it, which we miss if we attach in between.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+        app.apply(Update::Event(Event::JobBegin {
+            job_id: 900,
+            start_time: 0,
+            host_id: 1,
+        }));
+        let out = detail_of(&mut app, "build01");
+        assert!(out.contains("name not seen"), "{out}");
+    }
+
+    #[test]
+    fn an_idle_node_says_its_slots_are_free_rather_than_listing_nothing() {
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+        let out = detail_of(&mut app, "build01");
+        assert!(out.contains("no remote jobs running"), "{out}");
+        assert!(out.contains("8 slots free"), "{out}");
+    }
+
+    #[test]
+    fn an_implausible_free_memory_figure_is_labelled_not_converted() {
+        // The protocol documents FreeMem as MiB and Linux daemons send MiB, but
+        // the macOS daemon in the test cluster sends KiB (ARCHITECTURE §9).
+        // Rendering the documented unit regardless would claim terabytes of free
+        // memory on a laptop; silently guessing the unit is how the trap was set.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:mac\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\nFreeMem:5647912\n",
+        ));
+        let out = detail_of(&mut app, "mac");
+        assert!(out.contains("5647912"), "the raw figure must survive:\n{out}");
+        assert!(out.contains("KiB"), "the doubt must be stated:\n{out}");
+
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:linux\nIP:10.0.0.2\nMaxJobs:8\nNoRemote:false\nFreeMem:36732\n",
+        ));
+        let out = detail_of(&mut app, "linux");
+        assert!(out.contains("36732 MiB"), "a plausible figure is just shown:\n{out}");
+    }
+
+    #[test]
+    fn the_load_figure_says_what_it_actually_is() {
+        // "Load" in this protocol is the scheduler's placement weight, not CPU
+        // utilisation, and the name invites exactly the wrong reading.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\nLoad:772\n",
+        ));
+        let out = detail_of(&mut app, "build01");
+        assert!(out.contains("772 of 1000"), "{out}");
+        assert!(out.contains("placement weight"), "{out}");
     }
 
     #[test]
     fn scrolling_reveals_the_sections_below_the_first_screen() {
         let mut app = busy_cluster();
+        // A full slot list pushes the later sections past the fold.
+        for job in 0..12u32 {
+            app.apply(Update::Event(Event::GetCs {
+                job_id: 800 + job,
+                client_id: 2,
+                filename: format!("src/some/deeply/nested/translation_unit_{job}.cc"),
+                lang: 1,
+            }));
+            app.apply(Update::Event(Event::JobBegin {
+                job_id: 800 + job,
+                start_time: 0,
+                host_id: 1,
+            }));
+        }
         let first_screen = detail_of(&mut app, "build01");
         // Tall content on a short terminal: the later sections start off-screen.
         assert!(!first_screen.contains("AGENT"), "{first_screen}");
@@ -2286,10 +2435,10 @@ mod tests {
         ));
         detail_of(&mut app, "build01");
         let out = detail_text(&app);
-        assert!(out.contains("no agent has answered"), "{out}");
-        assert!(out.contains("not measured"), "{out}");
-        // Scheduler-sourced facts are still shown.
-        assert!(out.contains("compile slots"), "{out}");
+        assert!(out.contains("no agent here"), "{out}");
+        // Everything this panel shows comes from the scheduler, so a missing
+        // agent costs it nothing but the badge it can no longer justify.
+        assert!(out.contains("slots free"), "{out}");
         assert!(out.contains("3000"), "{out}");
     }
 
@@ -2418,22 +2567,29 @@ mod tests {
     }
 
     #[test]
-    fn many_cores_wrap_into_columns_rather_than_overflowing() {
+    fn a_long_filename_is_elided_rather_than_overflowing_the_line() {
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(
-            1,
-            "Name:big\nIP:10.0.0.1\nMaxJobs:64\nNoRemote:false\n",
-        ));
-        let mut snap = snapshot("big", 50.0, 500, Some(60.0));
-        snap.cpu.cores = 64;
-        snap.cpu.per_core_busy_pct = (0..64).map(|i| i as f32).collect();
-        app.apply_resource(1, ResourceResult::Ok(snap));
+        app.apply(stats(1, "Name:big\nIP:10.0.0.1\nMaxJobs:64\nNoRemote:false\n"));
+        for job in 0..64u32 {
+            app.apply(Update::Event(Event::GetCs {
+                job_id: 800 + job,
+                client_id: 1,
+                filename: format!(
+                    "third_party/blink/renderer/modules/very/deeply/nested/path/that/keeps/going/unit_{job}.cc"
+                ),
+                lang: 1,
+            }));
+            app.apply(Update::Event(Event::JobBegin {
+                job_id: 800 + job,
+                start_time: 0,
+                host_id: 1,
+            }));
+        }
 
-        let out = detail_of(&mut app, "big");
-        assert!(out.contains("64 cores"), "{out}");
-        assert!(out.contains("C0 "), "{out}");
-        // Every line must still fit the terminal.
+        detail_of(&mut app, "big");
+        let out = detail_text(&app);
+        assert!(out.contains('…'), "a cut name should say so:\n{out}");
         for line in out.lines() {
             assert!(line.chars().count() <= 118, "line overflows: {line:?}");
         }
