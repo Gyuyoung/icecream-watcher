@@ -78,7 +78,7 @@ learns the current cluster topology. **Note this initial replay carries no live 
 | `MON_GET_CS` (83) | a client requests a node (job becomes *pending*) | `string filename`, `u32 lang`, `u32 job_id`, `u32 clientid` |
 | `MON_JOB_BEGIN` (84) | remote job starts (job becomes *active*) | `u32 job_id`, `u32 stime`, `u32 hostid` |
 | `MON_JOB_DONE` (85) | remote job finishes | full `JobDoneMsg` (see below) |
-| `MON_LOCAL_JOB_BEGIN` (86) | local (non-distributed) job starts | `u32 job_id`, `u32 stime`, `u32 hostid`, `string file` |
+| `MON_LOCAL_JOB_BEGIN` (86) | local (non-distributed) job starts | `u32 hostid`, `u32 job_id`, `u32 stime`, `string file` |
 | `JOB_LOCAL_DONE` (79) | local job finishes | `u32 job_id` |
 
 `MON_JOB_DONE` carries the only per-job cost data in the protocol:
@@ -170,6 +170,15 @@ So `FreeMem` is **MiB of *available* memory** (MemFree+Buffers+Cached, per `calc
 and `LoadAvg*` is loadavg×1000.
 
 Two traps in this record:
+
+- **`MON_LOCAL_JOB_BEGIN` leads with the host id**, not the job id. Read the
+  other way round, a live scheduler was saying job 8 began at second 53128 on
+  host 1789205142: a host id no cluster has, and a start time that is not a
+  time. Read as `hostid, job_id, stime` the same frame says host 8 — the machine
+  running the build — job 53128, which is the id `JOB_LOCAL_DONE` quotes back
+  when it finishes, and a unix second within one of the clock. Getting this
+  wrong left every local job attributed to a host that does not exist and never
+  matched to its completion, so the cluster looked permanently busy.
 
 - **`Load` is not CPU utilisation.** `daemon/main.cpp:maybe_stats()` computes
   `load = max(1000 - idle_average, memory_fillgrade)`, and forces `1000` when the build directory

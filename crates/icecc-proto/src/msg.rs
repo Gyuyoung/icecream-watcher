@@ -96,10 +96,15 @@ pub fn decode(ty: u32, payload: &[u8], protocol: u32) -> Result<Event> {
             host_id: r.u32()?,
         },
 
+        // Host id first, then the job id, then the start time as a unix
+        // second. Read the other way round for a long time, and the live wire
+        // says otherwise: field 1 is a host id this cluster has (8, the machine
+        // running the build), field 2 is what `JOB_LOCAL_DONE` quotes back, and
+        // field 3 is within seconds of the clock. See the test below.
         MsgType::MonLocalJobBegin => Event::LocalJobBegin {
+            host_id: r.u32()?,
             job_id: r.u32()?,
             start_time: r.u32()?,
-            host_id: r.u32()?,
             file: r.string()?,
         },
 
@@ -218,18 +223,49 @@ mod tests {
     #[test]
     fn decodes_local_job_begin_with_filename() {
         let mut p = Vec::new();
+        p.extend_from_slice(&be(2));
         p.extend_from_slice(&be(9));
         p.extend_from_slice(&be(100));
-        p.extend_from_slice(&be(2));
         p.extend_from_slice(&cstr("main.cpp"));
         assert_eq!(
             decode(86, &p, 43).unwrap(),
             Event::LocalJobBegin {
+                host_id: 2,
                 job_id: 9,
                 start_time: 100,
-                host_id: 2,
                 file: "main.cpp".into()
             }
+        );
+    }
+
+    /// The frame that settled the field order, taken off a live scheduler.
+    ///
+    /// Read as `job_id, stime, hostid` it says job 8 started at second 53128 on
+    /// host 1789205142 — a host id no cluster has, and a start time that is not
+    /// a time. Read as `hostid, job_id, stime` it says host 8, which is the
+    /// machine that ran the build, job 53128, which is the id `JOB_LOCAL_DONE`
+    /// then quoted back, and 1789205142, which was the clock to the second.
+    #[test]
+    fn local_job_begin_field_order_matches_a_live_scheduler() {
+        let mut p = Vec::new();
+        p.extend_from_slice(&be(8));
+        p.extend_from_slice(&be(53_128));
+        p.extend_from_slice(&be(1_789_205_142));
+        p.extend_from_slice(&cstr("null"));
+        let Event::LocalJobBegin {
+            host_id,
+            job_id,
+            start_time,
+            ..
+        } = decode(86, &p, 43).unwrap()
+        else {
+            panic!("not a local job begin")
+        };
+        assert_eq!(host_id, 8, "a host id the cluster actually has");
+        assert_eq!(job_id, 53_128, "the id JOB_LOCAL_DONE quotes back");
+        assert!(
+            start_time > 1_700_000_000,
+            "a unix second, not a counter: {start_time}"
         );
     }
 
