@@ -112,12 +112,23 @@ pub fn duration(secs: u64) -> String {
 /// * **no warm hues.** Red, orange, yellow and tan carry *state* in this UI — a
 ///   problem badge, a saturated metric, a hot sensor — and a healthy node that
 ///   happened to hash into that range would read as a node in trouble.
-/// * **nothing too dark**, or the name vanishes on a dark terminal.
+/// * **nothing too dark**, or the name vanishes on the screen's black. The
+///   first version of this list said so and did not hold to it: it contained
+///   `(0, 95, 255)`, whose blue channel is at full while its luminance is 86,
+///   and that node was reported as unreadable. The floor is on *luminance*,
+///   because that is what "dark on black" means — a saturated blue can max a
+///   channel and still be dim. It is now 155, the highest the cube allows while
+///   still placing twelve colours three steps apart.
 /// * **no greys**, which already mean "no measurement".
 ///
 /// The first attempt at this list was picked by hand and paired 39 with 45 —
 /// one step apart in the cube, and the same colour to anyone glancing at a row.
-const NODE_COLOURS: [u8; 12] = [27, 38, 42, 67, 87, 93, 118, 127, 141, 151, 201, 225];
+///
+/// The floor costs the deep blues and violets, which are dark by construction:
+/// blue contributes about a fourteenth of luminance, so a readable blue is a
+/// pale one. What is left leans green and teal, and the separation rule keeps
+/// them apart rather than the hues being spread evenly round the wheel.
+const NODE_COLOURS: [u8; 12] = [43, 47, 51, 74, 107, 118, 122, 150, 153, 182, 193, 213];
 
 /// Green-to-red stops for the load ramp, as 24-bit RGB.
 ///
@@ -366,6 +377,25 @@ mod tests {
                 let distance = ar.abs_diff(br) + ag.abs_diff(bg) + ab.abs_diff(bb);
                 assert!(distance >= 3, "{a} and {b} are too close to tell apart");
             }
+        }
+    }
+
+    #[test]
+    fn no_node_colour_is_dim_against_the_screen() {
+        // The rule the list has always claimed and did not keep: it held
+        // (0, 95, 255), whose blue channel is at full and whose luminance is
+        // 86, and the node wearing it was reported as unreadable. Brightest
+        // channel is not the test; luminance is.
+        const LEVEL: [f32; 6] = [0.0, 95.0, 135.0, 175.0, 215.0, 255.0];
+        for index in NODE_COLOURS {
+            let (r, g, b) = cube_rgb(index);
+            let luminance = 0.2126 * LEVEL[r as usize]
+                + 0.7152 * LEVEL[g as usize]
+                + 0.0722 * LEVEL[b as usize];
+            assert!(
+                luminance >= 155.0,
+                "colour {index} has luminance {luminance:.0}: too dim to read on black"
+            );
         }
     }
 
