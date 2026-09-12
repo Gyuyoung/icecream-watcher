@@ -234,7 +234,7 @@ const BAND_MIN_GRAPH: usize = 20;
 /// Three lines that answer the whole-cluster questions on their own.
 fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summary) {
     let block = Block::bordered().title(Span::styled(
-        " CLUSTER ",
+        " ICECREAM CLUSTER ",
         Style::default().add_modifier(Modifier::BOLD),
     ));
     let inner = block.inner(area);
