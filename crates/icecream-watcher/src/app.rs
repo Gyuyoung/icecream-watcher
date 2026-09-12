@@ -139,16 +139,13 @@ impl App {
         self.dirty = true;
     }
 
-    /// Nodes in display order: online first, then offline, each by the current
-    /// sort key. Offline nodes sink to the bottom because their metrics are not
-    /// comparable with a live node's.
+    /// Nodes in display order, by the current sort key. A node that has left
+    /// the cluster is not here to order: it leaves the list entirely.
     pub fn sorted_nodes(&self) -> Vec<&Node> {
         let mut nodes: Vec<&Node> = self.cluster.nodes.values().collect();
         let key = self.sort;
         nodes.sort_by(|a, b| {
-            a.offline
-                .cmp(&b.offline)
-                .then_with(|| compare(a, b, key))
+            compare(a, b, key)
                 .then_with(|| a.name().cmp(b.name()))
                 .then_with(|| a.host_id.cmp(&b.host_id))
         });
@@ -520,11 +517,13 @@ mod tests {
     }
 
     #[test]
-    fn offline_nodes_sink_below_live_ones() {
+    fn a_node_that_leaves_is_not_sorted_at_all() {
+        // It is no longer in the list to place: an offline node leaves rather
+        // than sinking to the bottom struck through.
         let mut app = app_with_three();
         app.apply(stats(2, "State:Offline\n")); // the busiest node
         app.set_sort(SortKey::Load);
-        assert_eq!(names(&app).last().unwrap(), "build02");
+        assert_eq!(names(&app), ["build03", "build01"]);
     }
 
     #[test]

@@ -635,8 +635,9 @@ What changed:
 * **Colour ramps only as a metric becomes a problem**, and temperature
   thresholds are deliberately high (80/90 °C): build machines run hot, and
   colouring 70 °C as alarming would cry wolf.
-* **Idle is quiet, unhealthy is loud.** Idle rows dim; offline rows strike
-  through and sink below live ones; badges name the one thing wrong with a row.
+* **Idle is quiet, unhealthy is loud.** Idle rows dim and badges name the one
+  thing wrong with a row. (Offline rows struck through and sank to the bottom
+  until §8i removed them from the list entirely.)
 * **Two minutes of history per node**, sampled on a wall-clock timer rather than
   per event, so a quiet cluster's graphs still scroll and the horizontal axis
   means time.
@@ -786,9 +787,9 @@ long time. Expiry also releases the node's slot, or one wrong number would just
 be swapped for another. It runs before the history sample is taken, so the tick
 that corrects a figure does not also record the stale one.
 
-Offline nodes keep their row by default — "which node just died" is the point
-of showing it — but now carry `offline_since`, so a row says `down 12m` rather
-than just `down`. `--forget-offline` drops them for anyone running for days.
+Offline nodes kept their row, on the reasoning that "which node just died" is
+the point of showing it. §8i explains why that turned out to be wrong in
+practice and what replaced it.
 
 ### The busy-spin
 
@@ -1053,6 +1054,43 @@ carrying machine metrics; `?` and the footer list only the keys that work.
 | the cycle visits exactly the four | asserted by walking `next()` until it wraps and comparing the labels |
 | the freed keys are inert | `c` and `m` classify as `Ignored`, and `Ctrl-C` still quits |
 | the order matches the column | load sorting asserted against the scheduler's figure, not the load average |
+
+## 8i. Nodes that leave, leave — **done**
+
+Phase 6 kept an offline node's row, struck through and sunk to the bottom, and
+Phase 4 argued for it: "which node just died is exactly what the user wants to
+see". Ten hours on a real cluster showed the reasoning was wrong, in a way no
+amount of thinking about it would have.
+
+**Host ids are per connection, not per machine.** `icecc-scheduler` builds a new
+`CompileServer` — and so a new id — every time a daemon attaches. A laptop that
+sleeps and wakes therefore arrives as a brand new node each cycle, and its
+previous row stays offline forever. A morning of that left **ten struck-through
+copies of one MacBook** above the two machines that were actually compiling, and
+a header that said "12 nodes" when there were two.
+
+A node that goes offline is now removed from the list, and reappears by itself
+when its daemon reattaches. What the removal would otherwise destroy is kept as
+a count: the band says `1 left`, so the fact that something was here and went is
+not lost, it just costs one figure instead of a row.
+
+Gone with it: `Node::offline`, `offline_since`, `downtime()`, the `down 12m`
+badge, the struck-through row style, offline-last sorting, `Summary::nodes_offline`
+and the `--forget-offline` retention flag — which existed to trim exactly the
+accumulation that can no longer happen. Dead state that can never be true is a
+trap for whoever reads `if node.offline` next and assumes it happens.
+
+One real bug fell out of the same screenshot: the `LOAD` column printed a
+last-known figure on an offline row, through the strikethrough, while every
+other cell on that row correctly said `—`.
+
+| Claim | Evidence |
+|---|---|
+| a departing node leaves the list | its row, its slots and its jobs all go; the summary and the rendered table both assert it |
+| its jobs are released | a job running on it is gone from the queue, not left inflating the depth |
+| it comes back | a reconnect under a *new* host id renders exactly one row, not two |
+| the fact is not destroyed | `1 left` in the band, and a count in `Totals` |
+| an unknown node leaving is harmless | a `State:Offline` for a host id we never saw changes nothing |
 
 ## 9. Open questions for Phase 2+
 

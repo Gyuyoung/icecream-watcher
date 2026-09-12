@@ -87,12 +87,6 @@ pub struct Node {
     pub jobs_local: u64,
     /// When we last heard anything about this node.
     pub last_update: Instant,
-    /// Set by a `State:Offline` record or a scheduler-side removal.
-    pub offline: bool,
-    /// When it went offline, so a row can say *how long* it has been down.
-    /// "build07 is down" and "build07 has been down since before this build
-    /// started" call for different reactions.
-    pub offline_since: Option<Instant>,
     /// Last good metrics from this node's agent, kept even once stale so a row
     /// shows its last known values rather than going blank.
     pub resources: Option<Snapshot>,
@@ -123,8 +117,6 @@ impl Node {
             jobs_out: 0,
             jobs_local: 0,
             last_update: Instant::now(),
-            offline: false,
-            offline_since: None,
             resources: None,
             resource_state: ResourceState::default(),
             resources_at: None,
@@ -184,12 +176,7 @@ impl Node {
     /// `limit`. Because scheduler stats are change-driven, a quiet node is
     /// normal, so this is a weak signal — prefer [`Self::metrics_stale`].
     pub fn is_stale(&self, limit: Duration) -> bool {
-        !self.offline && self.last_update.elapsed() > limit
-    }
-
-    /// How long this node has been offline, if it is.
-    pub fn downtime(&self) -> Option<Duration> {
-        self.offline_since.map(|t| t.elapsed())
+        self.last_update.elapsed() > limit
     }
 
     /// Whether an agent has ever answered for this node.
@@ -270,9 +257,6 @@ impl Node {
     /// The point is to separate "CPU constrained" from "memory constrained" at
     /// a glance; without it both just look like a busy node.
     pub fn bottleneck(&self) -> Option<Bottleneck> {
-        if self.offline {
-            return None;
-        }
         let cpu = self.cpu_pct().unwrap_or(0.0);
         let mem = self.mem_pct().unwrap_or(0.0);
 
@@ -364,15 +348,15 @@ pub struct Totals {
     /// [`Cluster::job_timeout`]; a non-zero count here means the queue figure
     /// would otherwise have been overstated.
     pub expired_jobs: u64,
-    /// Offline nodes forgotten after [`Cluster::offline_retention`].
-    pub forgotten_nodes: u64,
+    /// Nodes that have left the cluster since connect. Their rows are gone, so
+    /// this is all that is left of the fact that they were ever here.
+    pub nodes_left: u64,
 }
 
 /// One-glance cluster figures, computed on demand.
 #[derive(Debug, Clone, Default)]
 pub struct Summary {
     pub nodes_online: usize,
-    pub nodes_offline: usize,
     /// Online nodes that accept remote jobs.
     pub nodes_available: usize,
     pub total_slots: u32,
@@ -380,6 +364,9 @@ pub struct Summary {
     pub pending_jobs: usize,
     pub active_jobs: usize,
     pub local_jobs: usize,
+    /// Nodes that have left the cluster since connect. Their rows are gone, so
+    /// this is the only thing left saying they were ever here.
+    pub nodes_left: u64,
     /// Online nodes reporting fresh metrics.
     pub nodes_with_metrics: usize,
     /// Online nodes with no agent answering, i.e. a deployment gap.
@@ -432,8 +419,6 @@ pub struct Cluster {
     /// exactly as wrong as overstating it, and a saturated cluster can keep a
     /// job queued legitimately for a long time. `None` disables expiry.
     pub job_timeout: Option<Duration>,
-    /// Forget an offline node after this long. `None` keeps it for the session.
-    pub offline_retention: Option<Duration>,
     /// The first scheduler this session attached to. A later session attaching
     /// to a *different* address means the whole cluster on screen changed
     /// identity, which the user has to be told rather than left to notice.
@@ -463,7 +448,6 @@ impl Cluster {
             rate_history: History::default(),
             last_completed: 0,
             job_timeout: Some(Duration::from_secs(30 * 60)),
-            offline_retention: None,
             first_target: None,
         }
     }
@@ -509,14 +493,6 @@ impl Cluster {
 
         let stale_after = self.metrics_stale_after;
         for node in self.nodes.values_mut() {
-            if node.offline {
-                // Not measured rather than zero: a dead node has no CPU load,
-                // it has no reading at all.
-                node.cpu_history.push(None);
-                node.mem_history.push(None);
-                node.slots_history.push(None);
-                continue;
-            }
             // Stale metrics are a gap too, so a graph cannot flatline on a
             // value that stopped being true a minute ago. Values are read out
             // before pushing, because the push borrows the node mutably.
@@ -569,24 +545,6 @@ impl Cluster {
                 );
             }
         }
-
-        if let Some(limit) = self.offline_retention {
-            let gone: Vec<u32> = self
-                .nodes
-                .values()
-                .filter(|n| n.downtime().is_some_and(|d| d > limit))
-                .map(|n| n.host_id)
-                .collect();
-            for host_id in gone {
-                if let Some(node) = self.nodes.remove(&host_id) {
-                    self.totals.forgotten_nodes += 1;
-                    tracing::info!(
-                        "forgetting node {} (host id {host_id}), offline for over {limit:?}",
-                        node.name()
-                    );
-                }
-            }
-        }
     }
 
     /// The scheduler we attached to first, when the current one is not it.
@@ -620,7 +578,6 @@ impl Cluster {
         let mut speeds: Vec<f64> = self
             .nodes
             .values()
-            .filter(|n| !n.offline)
             .filter_map(|n| n.speed())
             .collect();
         if speeds.is_empty() {
@@ -790,33 +747,30 @@ impl Cluster {
 
     fn apply_stats(&mut self, host_id: u32, blob: &str) {
         let record = StatsRecord::parse(blob);
+
+        // A node that has gone leaves the list rather than sitting in it struck
+        // through. Host ids are per *connection* — the scheduler builds a new
+        // `CompileServer`, and so a new id, every time a daemon attaches — so a
+        // laptop that sleeps and wakes would leave a fresh corpse behind on
+        // every cycle, and a morning of that is a screen of one machine's
+        // remains crowding out the nodes that are running. It reappears by
+        // itself when its daemon reattaches.
+        if record.offline {
+            let Some(gone) = self.nodes.remove(&host_id) else {
+                return;
+            };
+            for id in gone.active_jobs.iter().chain(gone.local_jobs.iter()) {
+                self.jobs.remove(id);
+            }
+            self.totals.nodes_left += 1;
+            tracing::info!("{} (host id {host_id}) left the cluster", gone.name());
+            return;
+        }
+
         let node = self.node_mut(host_id);
         record.merge_into(&mut node.stats);
         node.last_update = Instant::now();
 
-        if record.offline {
-            // Keep the row: "which node just died" is exactly what the user
-            // wants to see. Its jobs are gone, though.
-            if !node.offline {
-                node.offline_since = Some(Instant::now());
-            }
-            node.offline = true;
-            let dead: Vec<u32> = node
-                .active_jobs
-                .iter()
-                .chain(node.local_jobs.iter())
-                .copied()
-                .collect();
-            node.active_jobs.clear();
-            node.local_jobs.clear();
-            for id in dead {
-                self.jobs.remove(&id);
-            }
-        } else {
-            // A node can come back with the same host id after a restart.
-            node.offline = false;
-            node.offline_since = None;
-        }
     }
 
     fn finish_remote(&mut self, done: JobDone) {
@@ -884,7 +838,6 @@ impl Cluster {
     pub fn poll_targets(&self) -> Vec<(u32, String)> {
         self.nodes
             .values()
-            .filter(|n| !n.offline)
             .filter_map(|n| {
                 let ip = n.stats.ip.as_deref()?;
                 (!ip.is_empty() && ip != "?").then(|| (n.host_id, ip.to_owned()))
@@ -899,12 +852,11 @@ impl Cluster {
     }
 
     pub fn summary(&self) -> Summary {
-        let mut s = Summary::default();
+        let mut s = Summary {
+            nodes_left: self.totals.nodes_left,
+            ..Summary::default()
+        };
         for node in self.nodes.values() {
-            if node.offline {
-                s.nodes_offline += 1;
-                continue;
-            }
             s.nodes_online += 1;
             if node.accepts_remote() {
                 s.nodes_available += 1;
@@ -1086,71 +1038,65 @@ mod tests {
         assert_eq!(c.pending_history.last(), Some(0.0));
     }
 
-    // -------------------------------------------------- offline nodes
+    // -------------------------------------------------- nodes leaving
 
     #[test]
-    fn an_offline_node_records_when_it_went_down() {
+    fn a_node_that_goes_offline_leaves_the_list() {
+        // Host ids are per connection, so a laptop that sleeps and wakes would
+        // otherwise leave a corpse behind every cycle until the screen was all
+        // remains. It comes back by itself when its daemon reattaches.
         let mut c = cluster_with_two_nodes();
-        assert_eq!(c.nodes[&1].downtime(), None);
-
         c.apply(stats(1, "State:Offline\n"));
-        assert!(
-            c.nodes[&1].downtime().is_some(),
-            "a down node must know how long it has been down"
-        );
 
-        c.apply(stats(1, &node_blob("build01", 8)));
-        assert_eq!(
-            c.nodes[&1].downtime(),
-            None,
-            "coming back must clear the clock"
-        );
+        assert!(!c.nodes.contains_key(&1));
+        assert_eq!(c.nodes.len(), 1);
+        let s = c.summary();
+        assert_eq!(s.nodes_online, 1);
+        assert_eq!(s.total_slots, 4, "its slots go with it");
     }
 
     #[test]
-    fn repeated_offline_records_do_not_restart_the_downtime_clock() {
-        // The scheduler can resend State:Offline; if that reset the timer the
-        // row would permanently read "down 0s".
+    fn a_departure_releases_the_jobs_it_was_holding() {
+        // The scheduler has already given up on them; leaving them in the queue
+        // would inflate the depth for the rest of the session.
         let mut c = cluster_with_two_nodes();
+        c.apply(get_cs(7, 2));
+        c.apply(job_begin(7, 1));
+        assert_eq!(c.summary().active_jobs, 1);
+
         c.apply(stats(1, "State:Offline\n"));
-        let first = c.nodes[&1].offline_since;
-        pass(Duration::from_millis(2));
-        c.apply(stats(1, "State:Offline\n"));
-        assert_eq!(c.nodes[&1].offline_since, first);
+        assert_eq!(c.summary().active_jobs, 0);
+        assert!(c.jobs.is_empty());
     }
 
     #[test]
-    fn offline_nodes_are_kept_by_default() {
-        // "which node just died" is the point of the row; forgetting it by
-        // default would hide exactly what the user came to see.
-        let c = Cluster::new();
-        assert_eq!(c.offline_retention, None);
-    }
-
-    #[test]
-    fn a_long_dead_node_is_forgotten_when_asked_and_counted() {
+    fn a_departure_is_counted_even_though_the_row_is_gone() {
+        // Removing the row removes the only trace that the node was ever here,
+        // so the count is what is left of it.
         let mut c = cluster_with_two_nodes();
-        c.offline_retention = Some(Duration::from_millis(2));
         c.apply(stats(1, "State:Offline\n"));
-
-        pass(Duration::from_millis(2));
-        c.tick_history();
-
-        assert!(!c.nodes.contains_key(&1), "the dead node should be gone");
-        assert!(c.nodes.contains_key(&2), "the live one must stay");
-        assert_eq!(c.totals.forgotten_nodes, 1);
+        c.apply(stats(2, "State:Offline\n"));
+        assert_eq!(c.totals.nodes_left, 2);
     }
 
     #[test]
-    fn a_live_node_is_never_forgotten_however_long_it_is_quiet() {
-        // Scheduler stats are change-driven, so a busy-but-unchanging node can
-        // be silent for a long time. Only being *offline* starts the clock.
+    fn a_node_reappears_when_its_daemon_comes_back() {
+        // Under a new host id, because the scheduler issues one per connection.
         let mut c = cluster_with_two_nodes();
-        c.offline_retention = Some(Duration::from_millis(1));
-        pass(Duration::from_millis(1));
-        c.tick_history();
+        c.apply(stats(1, "State:Offline\n"));
+        c.apply(stats(9, &node_blob("build01", 8)));
+
         assert_eq!(c.nodes.len(), 2);
-        assert_eq!(c.totals.forgotten_nodes, 0);
+        assert_eq!(c.nodes[&9].name(), "build01");
+        assert!(!c.nodes.contains_key(&1), "no duplicate left behind");
+    }
+
+    #[test]
+    fn an_offline_record_for_a_node_we_never_saw_is_harmless() {
+        let mut c = cluster_with_two_nodes();
+        c.apply(stats(99, "State:Offline\n"));
+        assert_eq!(c.nodes.len(), 2);
+        assert_eq!(c.totals.nodes_left, 0, "nothing left, so nothing to count");
     }
 
     // -------------------------------------------------- scheduler identity
@@ -1356,38 +1302,6 @@ mod tests {
         assert_eq!(c.nodes[&1].jobs_in, 1);
         // Submitter unknown, so nobody's OUT counter moved.
         assert_eq!(c.nodes[&2].jobs_out, 0);
-    }
-
-    #[test]
-    fn offline_keeps_the_row_but_releases_the_jobs() {
-        let mut c = cluster_with_two_nodes();
-        c.apply(Update::Event(Event::JobBegin {
-            job_id: 1,
-            start_time: 0,
-            host_id: 1,
-        }));
-        c.apply(stats(1, "State:Offline\n"));
-
-        let node = &c.nodes[&1];
-        assert!(node.offline);
-        assert_eq!(node.name(), "build01", "last known identity must survive");
-        assert_eq!(node.current_jobs(), 0);
-
-        let s = c.summary();
-        assert_eq!(s.nodes_online, 1);
-        assert_eq!(s.nodes_offline, 1);
-        assert_eq!(s.total_slots, 4, "an offline node offers no slots");
-        assert_eq!(s.active_jobs, 0);
-    }
-
-    #[test]
-    fn a_node_can_come_back_after_going_offline() {
-        let mut c = cluster_with_two_nodes();
-        c.apply(stats(1, "State:Offline\n"));
-        assert!(c.nodes[&1].offline);
-        c.apply(stats(1, &node_blob("build01", 8)));
-        assert!(!c.nodes[&1].offline);
-        assert_eq!(c.summary().total_slots, 12);
     }
 
     #[test]
@@ -1654,14 +1568,17 @@ mod tests {
     }
 
     #[test]
-    fn an_offline_node_is_not_counted_in_agent_coverage() {
+    fn a_departed_node_is_not_counted_in_agent_coverage() {
+        // Agent coverage is a rollout question — "how many of the machines
+        // that are here are reporting" — so a machine that has left is not a
+        // gap in it.
         let mut c = cluster_with_two_nodes();
         c.apply_resource(1, ResourceResult::Ok(snapshot("build01", 82.0, 700)));
         c.apply(stats(2, "State:Offline\n"));
 
         let s = c.summary();
+        assert_eq!(s.nodes_online, 1);
         assert_eq!(s.nodes_with_metrics, 1);
         assert_eq!(s.nodes_without_agent, 0);
-        assert_eq!(s.nodes_offline, 1);
     }
 }

@@ -92,11 +92,6 @@ struct Cli {
     #[arg(long, value_name = "SECS", default_value_t = 1800)]
     job_timeout: u64,
 
-    /// Remove a node from the list after it has been offline this long.
-    /// 0 (the default) keeps offline nodes for the whole session.
-    #[arg(long, value_name = "SECS", default_value_t = 0)]
-    forget_offline: u64,
-
     /// Longest gap between reconnection attempts. Attempts back off from 1 s,
     /// doubling, so a scheduler that is simply gone is not polled all night.
     #[arg(long, value_name = "SECS", default_value_t = 30)]
@@ -161,7 +156,6 @@ fn main() -> io::Result<()> {
         let limits = Limits {
             metrics_stale_after: Duration::from_millis(cli.stale_after),
             job_timeout: optional_secs(cli.job_timeout),
-            offline_retention: optional_secs(cli.forget_offline),
         };
         if cli.dump {
             run_dump(rx, collector, limits).await
@@ -202,10 +196,10 @@ async fn run_dump(
 
     let s = app.cluster.summary();
     println!(
-        "\n{} nodes online ({} offline), slots {}/{}, {} active / {} pending jobs, \
+        "\n{} nodes online ({} have left), slots {}/{}, {} active / {} pending jobs, \
          agents {}/{} ({} stale, {} missing)",
         s.nodes_online,
-        s.nodes_offline,
+        s.nodes_left,
         s.used_slots,
         s.total_slots,
         s.active_jobs,
@@ -223,14 +217,12 @@ async fn run_dump(
 struct Limits {
     metrics_stale_after: Duration,
     job_timeout: Option<Duration>,
-    offline_retention: Option<Duration>,
 }
 
 impl Limits {
     fn apply(&self, app: &mut App) {
         app.cluster.metrics_stale_after = self.metrics_stale_after;
         app.cluster.job_timeout = self.job_timeout;
-        app.cluster.offline_retention = self.offline_retention;
     }
 }
 

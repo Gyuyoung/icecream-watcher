@@ -13,13 +13,13 @@ honest when the cluster or the network misbehaves. See
 icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] help
 ┌ CLUSTER ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │SLOTS  38/88      43%                     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
-│       7 online · 1 down · 1 no agent     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶│
+│       7 online · 1 left · 1 no agent     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶│
 │QUEUE  7 wait    → steady                 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │       peak 7 · 38 remote · 0 local       ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │RATE   0/s                                ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ 8 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+┌ 7 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │NODE                                      MAX ACTIVE JOBS                 IN    OUT LOAD  SPEED  JOBS 2min          │
 │build01 cpu!                               16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
 │build02 mem!                               16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
@@ -28,7 +28,7 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │build05                                     8      0 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
 │build07                                    16      0 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
 │laptop local                               12      1 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build06 down 0s                             —      —                       —      —    —      —                     │
+│                                                                                                                    │
 │                                                                                                                    │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -48,9 +48,16 @@ A machine's CPU, memory and temperature are its own business and appear nowhere
 but as the conclusion drawn from them: `build01` is badged `cpu!` and `build02`
 `mem!`, the answer to "why is this node not taking more work" without the gauges
 behind it. `build04` is a slow outlier
-and the `!` on its speed says so. `build07` has no agent, so only its load is
-unknown; everything else came from the scheduler. `build06` has dropped out, says
-how long it has been gone, and has sunk to the bottom.
+and the `!` on its speed says so. `build07` has no agent, so only its
+load is unknown; everything else came from the scheduler.
+
+**A node that goes offline leaves the list**, and comes back by itself when its
+daemon reattaches. Host ids are per *connection* — the scheduler issues a new one
+every time a daemon attaches — so a laptop that sleeps and wakes would otherwise
+leave a struck-through copy of itself behind on every cycle, until a morning of
+that is a screen of one machine's remains crowding out the nodes that are
+running. The band keeps the count (`1 left`), which is what remains of the fact
+that the node was ever there.
 
 `MAX` and `ACTIVE` carry the job counts as plain numbers, and the `JOBS` meter
 beside them gives **one cell per slot**, so slots can be counted rather than
@@ -69,8 +76,7 @@ machine through a re-sort, through other nodes coming and going, and between
 sessions. The palette is blues, greens, cyans and purples only: red, orange and
 yellow mean *state* here — a problem badge, a saturated metric, a hot sensor — and
 a healthy node that happened to hash into that range would read as a node in
-trouble. State still wins over identity, so an offline row is grey whatever
-colour it would otherwise have had.
+trouble.
 
 The history strip gets one character row, so four levels rather than the eight a
 block sparkline gives, but twice the horizontal resolution — for "has this node
@@ -119,9 +125,9 @@ Esc back  ↑↓/jk scroll  q quit   build02
 Below the fold the `NODE` section continues with free memory and the job counters
 since this monitor connected, and ends with a footnote naming the agent — the
 only thing it is still used for is the `cpu!` / `mem!` badges, so there has to be
-somewhere to see the figures behind them. Anything wrong with the node — offline,
-no ack from the scheduler, a hostname that does not match — is stated at the top,
-before the numbers it would explain.
+somewhere to see the figures behind them. Anything wrong with the node — no ack
+from the scheduler, an agent that answered with nonsense, a hostname that does
+not match — is stated at the top, before the numbers it would explain.
 
 Only jobs this monitor saw *start* appear in the list. The scheduler replays node
 stats when a monitor logs in but not jobs, so anything already compiling when you
@@ -174,7 +180,6 @@ Other flags:
 | `--stale-after MS` | when to call metrics stale (default 5000) |
 | `--no-agents` | scheduler data only; do not poll agents at all |
 | `--job-timeout SECS` | forget a job whose completion never arrives (default 1800; 0 disables) |
-| `--forget-offline SECS` | drop a node after this long offline (default 0, meaning never) |
 | `--reconnect-max-delay SECS` | ceiling on the reconnect backoff (default 30) |
 
 ## Node metrics
@@ -219,7 +224,7 @@ with the columns that showed them, because a list that reorders itself by a
 number the reader cannot see is worse than one with fewer orderings. Metric
 sorts put the busiest node first, since the reason to sort by load is to see
 what is loaded. Nodes with no measurement sort last rather than being flipped
-to the top, and offline nodes always sink below live ones. The selection follows
+to the top. The selection follows
 its node through a re-sort.
 
 ## Reading the screen
@@ -285,10 +290,6 @@ and `r` cuts the wait short.
 **A different scheduler.** If discovery lands somewhere new, the header says
 `⇄ moved from <old>`: every host id, node and counter now belongs to another
 cluster, which is not something to discover by noticing the numbers changed.
-
-**A node that leaves.** Its row stays, marked `down 12m`, because which node
-just died is usually the thing you opened the monitor for. `--forget-offline`
-drops them for sessions that run for days.
 
 **A job that never finishes.** The protocol does not guarantee that every job
 you are told about is one you are told the end of, and a stuck job would inflate

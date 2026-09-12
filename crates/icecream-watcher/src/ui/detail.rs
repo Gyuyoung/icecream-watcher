@@ -84,12 +84,6 @@ pub fn lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>>
 /// Anything wrong with the node, stated before the numbers it would explain.
 fn status_lines(node: &Node) -> Vec<Line<'static>> {
     let mut out = Vec::new();
-    if node.offline {
-        out.push(warn(
-            "OFFLINE",
-            "the scheduler has lost this node; the values below are its last known ones",
-        ));
-    }
     if node.identity_mismatch {
         if let Some(agent) = node.resources.as_ref().map(|r| r.hostname.clone()) {
             out.push(warn(
@@ -147,11 +141,7 @@ fn jobs_lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>
 
     if running.is_empty() {
         out.push(Line::from(Span::styled(
-            if node.offline {
-                "    nothing — the scheduler has lost this node".to_owned()
-            } else {
-                format!("    no remote jobs running ({} slots free)", node.max_jobs())
-            },
+            format!("    no remote jobs running ({} slots free)", node.max_jobs()),
             Style::default().add_modifier(Modifier::DIM),
         )));
     } else {

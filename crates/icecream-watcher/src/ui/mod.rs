@@ -352,9 +352,11 @@ fn slots_block(
             Style::default().fg(Color::Yellow),
         ));
     }
-    if summary.nodes_offline > 0 {
+    // Not "down": a node that goes offline leaves the list, so this count is
+    // all that is left saying it was ever here.
+    if summary.nodes_left > 0 {
         health.push(Span::styled(
-            format!(" · {} down", summary.nodes_offline),
+            format!(" · {} left", summary.nodes_left),
             Style::default().fg(Color::LightRed),
         ));
     }
@@ -473,9 +475,11 @@ fn slots_line(summary: &Summary, bar_width: usize) -> Line<'static> {
             Style::default().fg(Color::Yellow),
         ));
     }
-    if summary.nodes_offline > 0 {
+    // Not "down": a node that goes offline leaves the list, so this count is
+    // all that is left saying it was ever here.
+    if summary.nodes_left > 0 {
         spans.push(Span::styled(
-            format!(" · {} down", summary.nodes_offline),
+            format!(" · {} left", summary.nodes_left),
             Style::default().fg(Color::LightRed),
         ));
     }
@@ -798,15 +802,15 @@ fn node_row<'a>(
     let mut cells = vec![Cell::from(name_cell(node, stale, cols.name as usize))];
     if cols.cur_max {
         let w = COUNT_WIDTH as usize;
-        cells.push(Cell::from(count_cell(node, u64::from(node.max_jobs()), w)));
-        cells.push(Cell::from(count_cell(node, u64::from(node.current_jobs()), w)));
+        cells.push(Cell::from(count_cell(u64::from(node.max_jobs()), w)));
+        cells.push(Cell::from(count_cell(u64::from(node.current_jobs()), w)));
     }
     cells.push(Cell::from(slots_cell(node, cluster, cols.slot_bar)));
 
     if cols.jobs {
         let w = JOBS_WIDTH as usize;
-        cells.push(Cell::from(count_cell(node, node.jobs_in, w)));
-        cells.push(Cell::from(count_cell(node, node.jobs_out, w)));
+        cells.push(Cell::from(count_cell(node.jobs_in, w)));
+        cells.push(Cell::from(count_cell(node.jobs_out, w)));
     }
     if cols.load {
         cells.push(Cell::from(load_cell(node)));
@@ -818,11 +822,7 @@ fn node_row<'a>(
         cells.push(Cell::from(slots_graph_cell(node, cols.graph)));
     }
 
-    let row_style = if node.offline {
-        Style::default()
-            .fg(Color::DarkGray)
-            .add_modifier(Modifier::CROSSED_OUT)
-    } else if !node.is_busy() {
+    let row_style = if !node.is_busy() {
         // Idle is deliberately quiet, so busy nodes are what the eye lands on.
         Style::default().add_modifier(Modifier::DIM)
     } else {
@@ -834,10 +834,7 @@ fn node_row<'a>(
 
 /// A counter since connect, right-aligned. Zero is dimmed rather than hidden:
 /// "this node has compiled nothing" is an answer, and a blank is not.
-fn count_cell<'a>(node: &Node, value: u64, width: usize) -> Line<'a> {
-    if node.offline {
-        return dim(format!("{UNKNOWN:>width$}"));
-    }
+fn count_cell<'a>(value: u64, width: usize) -> Line<'a> {
     let text = format!("{value:>width$}");
     if value == 0 {
         dim(text)
@@ -854,9 +851,6 @@ fn count_cell<'a>(node: &Node, value: u64, width: usize) -> Line<'a> {
 /// is it busier now than a minute ago" that is the better trade; the exact
 /// figure is one column to the left.
 fn slots_graph_cell<'a>(node: &Node, width: usize) -> Line<'a> {
-    if node.offline {
-        return dim(" ".repeat(width));
-    }
     let samples = node.slots_history.stretched(width * graph::CELL_COLS);
     let glyphs = graph::area(&samples, 100.0, width, 1);
     Line::from(Span::styled(
@@ -867,16 +861,7 @@ fn slots_graph_cell<'a>(node: &Node, width: usize) -> Line<'a> {
 
 fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
     // At most one badge, in order of how much it should worry the reader.
-    let badge: Option<(String, Color)> = if node.offline {
-        // How long it has been down, not just that it is: a node that dropped
-        // ten seconds ago is a live incident, one down for three hours is
-        // furniture, and the reaction to each is different.
-        let text = match node.downtime() {
-            Some(d) => format!("down {}", widgets::brief_duration(d.as_secs())),
-            None => "down".to_owned(),
-        };
-        Some((text, Color::LightRed))
-    } else if matches!(node.resource_state, ResourceState::Error { .. }) {
+    let badge: Option<(String, Color)> = if matches!(node.resource_state, ResourceState::Error { .. }) {
         Some(("agent?".to_owned(), Color::LightRed))
     } else if node.identity_mismatch {
         Some(("host?".to_owned(), Color::LightRed))
@@ -907,17 +892,10 @@ fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
         .as_ref()
         .map_or(0, |(text, _)| text.chars().count() + 1);
     // The name is where the colour is most useful: it is what the eye looks
-    // for when scanning back to a node it was already watching. State still
-    // wins — an offline row is grey whatever colour its name would have been,
-    // because "which machine is this" matters less than "this one is gone".
-    let name_style = if node.offline {
-        Style::default().fg(Color::DarkGray)
-    } else {
-        Style::default().fg(widgets::node_colour(node.name()))
-    };
+    // for when scanning back to a node it was already watching.
     let mut spans = vec![Span::styled(
         elide(node.name(), width.saturating_sub(badge_width)),
-        name_style,
+        Style::default().fg(widgets::node_colour(node.name())),
     )];
 
     if let Some((text, colour)) = badge {
@@ -961,8 +939,8 @@ pub(crate) fn elide(text: &str, max: usize) -> String {
 /// monitor attached have no known submitter and take the compiling node's own
 /// colour.
 fn slots_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
-    if node.offline || width == 0 {
-        return dim(" ".repeat(width));
+    if width == 0 {
+        return Line::raw("");
     }
     let max = node.max_jobs() as usize;
     if max == 0 {
@@ -1626,17 +1604,6 @@ mod tests {
     }
 
     #[test]
-    fn an_offline_node_is_grey_whatever_colour_it_would_have_been() {
-        // State beats identity: "this one is gone" matters more than which
-        // machine it was.
-        let mut app = busy_cluster();
-        app.apply(stats(3, "State:Offline\n"));
-        let colours = row_colours(&app, 130, 30, "build03");
-        let first = colours.iter().find(|c| **c != Color::Reset).copied();
-        assert_eq!(first, Some(Color::DarkGray), "{colours:?}");
-    }
-
-    #[test]
     fn the_table_carries_icecream_figures_not_machine_ones() {
         // btop is the reference for how the screen reads, not for what it
         // measures. CPU, memory and temperature are a machine's business and
@@ -1721,23 +1688,35 @@ mod tests {
     }
 
     #[test]
-    fn health_problems_are_visible_in_the_band_and_on_the_row() {
+    fn a_node_that_leaves_disappears_and_the_band_says_so() {
+        // Host ids are per connection, so a laptop that sleeps and wakes would
+        // otherwise leave a struck-through copy of itself behind every cycle.
+        // The count in the band is what is left of the fact that it was here.
         let mut app = busy_cluster();
+        assert!(render(&app, 130, 24).contains("build03"));
+
         app.apply(stats(3, "State:Offline\n"));
         let out = render(&app, 130, 24);
-        assert!(out.contains("1 down"), "{out}");
-        assert!(row_for(&out, "build03").contains("down"), "{out}");
+        assert!(!out.contains("build03"), "the row should be gone:\n{out}");
+        assert!(out.contains("1 left"), "{out}");
+        assert!(out.contains("2 nodes"), "{out}");
     }
 
     #[test]
-    fn an_offline_node_sinks_below_the_live_ones() {
+    fn a_node_that_comes_back_reappears_under_its_new_host_id() {
         let mut app = busy_cluster();
-        app.apply(stats(1, "State:Offline\n"));
+        app.apply(stats(3, "State:Offline\n"));
+        app.apply(stats(
+            33,
+            "Name:build03\nIP:10.0.0.3\nMaxJobs:8\nNoRemote:false\nSpeed:3100\n",
+        ));
         let out = render(&app, 130, 24);
-        let lines: Vec<&str> = out.lines().collect();
-        let offline = lines.iter().position(|l| l.contains("build01")).unwrap();
-        let live = lines.iter().position(|l| l.contains("build02")).unwrap();
-        assert!(offline > live, "offline node should sink:\n{out}");
+        assert_eq!(
+            out.matches("build03").count(),
+            1,
+            "exactly one row, not two:\n{out}"
+        );
+        assert!(out.contains("3 nodes"), "{out}");
     }
 
     #[test]
@@ -1928,20 +1907,6 @@ mod tests {
         app.last_event = Some(Instant::now());
         let out = render(&app, 160, 24);
         assert!(!out.contains("quiet"), "{out}");
-    }
-
-    #[test]
-    fn a_down_node_says_how_long_it_has_been_down() {
-        // "down" and "down since before this build started" call for different
-        // reactions, and only one of them is an incident.
-        let mut app = busy_cluster();
-        app.apply(stats(1, "State:Offline\n"));
-        if let Some(node) = app.cluster.nodes.get_mut(&1) {
-            node.offline_since = Some(Instant::now() - Duration::from_secs(3600));
-        }
-        let out = render(&app, 160, 24);
-        let row = row_for(&out, "build01");
-        assert!(row.contains("down 1h"), "{row}");
     }
 
     #[test]
@@ -2448,14 +2413,13 @@ mod tests {
         let healthy = detail_of(&mut app, "build01");
         assert!(healthy.contains("healthy"), "{healthy}");
 
+        // Silence must never be ambiguous: a node with nothing wrong says so,
+        // and a node with something wrong leads with it.
         app.on_key(crate::app::Key::Back);
-        app.apply(stats(2, "State:Offline\n"));
+        app.apply_resource(2, ResourceResult::Bad("HTTP 503".into()));
         let sick = detail_of(&mut app, "build02");
-        assert!(sick.contains("OFFLINE"), "{sick}");
-        assert!(
-            sick.contains("last known"),
-            "an offline node's numbers must be labelled:\n{sick}"
-        );
+        assert!(sick.contains("AGENT ERROR"), "{sick}");
+        assert!(sick.contains("503"), "{sick}");
     }
 
     #[test]
