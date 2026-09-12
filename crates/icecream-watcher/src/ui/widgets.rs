@@ -127,11 +127,11 @@ const NODE_COLOURS: [u8; 12] = [27, 38, 42, 67, 87, 93, 118, 127, 141, 151, 201,
 /// as the figure it stands for climbs; a gradient that doubles back reads as
 /// noise however pretty the individual colours are.
 const HEAT_STOPS: [(u8, u8, u8); 5] = [
-    (48, 214, 64),
-    (154, 214, 48),
-    (255, 214, 48),
-    (255, 140, 48),
-    (255, 48, 48),
+    (40, 220, 60),
+    (150, 215, 50),
+    (255, 210, 40),
+    (255, 140, 40),
+    (255, 50, 40),
 ];
 
 /// The ramp as true 24-bit colour. `0.0` is green, `1.0` is red.

@@ -1010,7 +1010,11 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     if free > 0 {
         spans.push(Span::styled(
             SLOT_FREE.to_string().repeat(free),
-            Style::default().fg(Color::DarkGray),
+            // Not `DarkGray`: an idle row is dimmed as well, and the two
+            // together left the baseline all but invisible — which loses the
+            // one thing it is there for, showing how many slots the busy part
+            // is a fraction of.
+            Style::default().fg(SLOT_BASELINE),
         ));
     }
     // Pad to the column so the graphs to the right of every row line up.
@@ -1032,6 +1036,10 @@ fn load_colour(node: &Node) -> Color {
         None => Color::Gray,
     }
 }
+
+/// The unfilled part of a meter. Bright enough to survive an idle row's dimming,
+/// dark enough not to compete with the slots that are actually busy.
+const SLOT_BASELINE: Color = Color::Rgb(120, 120, 120);
 
 /// An occupied slot: the left dot-column filled, the baseline continuing right.
 /// The gap is what keeps a run of busy slots countable.
@@ -1565,6 +1573,31 @@ mod tests {
         let unknown = meter_colours(&node_at_cpu("dark", 1, None), "dark");
         assert_eq!(unknown, vec![Color::Gray]);
         assert_ne!(unknown, vec![widgets::heat(0.0)]);
+    }
+
+    #[test]
+    fn an_idle_meter_is_still_visible() {
+        // An idle row is dimmed on purpose, and the baseline used to be drawn in
+        // DarkGray on top of that — the two together left the meter a smudge,
+        // which loses the one thing the baseline is there for: showing how many
+        // slots the busy part would be a fraction of.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(1, "Name:quiet\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+
+        let mut ui = Ui::default();
+        let mut terminal = Terminal::new(TestBackend::new(130, 24)).unwrap();
+        terminal.draw(|f| draw(f, &app, &mut ui)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        let cell = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .find(|(x, y)| buf[(*x, *y)].symbol() == SLOT_FREE.to_string())
+            .map(|(x, y)| buf[(x, y)].style())
+            .expect("an idle node still draws its meter");
+
+        assert_eq!(cell.fg, Some(SLOT_BASELINE));
+        assert_ne!(cell.fg, Some(Color::DarkGray), "too dark under a dim row");
     }
 
     #[test]
