@@ -238,11 +238,12 @@ impl App {
 
     pub fn on_key(&mut self, key: Key) {
         match key {
-            Key::Quit => self.should_quit = true,
-            Key::Back => {
-                // Esc unwinds one layer at a time: overlay, then detail, then
+            Key::ForceQuit => self.should_quit = true,
+            Key::Quit | Key::Back => {
+                // Both unwind one layer at a time: overlay, then detail, then
                 // the session. Quitting straight from a detail view would be a
-                // surprise.
+                // surprise — the way out of a view is the same key twice, not
+                // the end of the session.
                 if self.show_help {
                     self.show_help = false;
                     self.dirty = true;
@@ -321,9 +322,15 @@ fn opt_cmp<T: PartialOrd>(a: Option<T>, b: Option<T>) -> Missing {
 /// An action, decoupled from the terminal's key encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
+    /// `q`: the same as [`Key::Back`]. It reads as "quit" and it does quit —
+    /// but from a detail view, what the reader wants out of is the detail view,
+    /// and a keystroke that ends the session instead is a bad surprise.
     Quit,
     /// Esc: leave the current overlay, or quit at the top level.
     Back,
+    /// Ctrl-C: quit from wherever you are, no unwinding. The one key that
+    /// always means what it says.
+    ForceQuit,
     /// `r` — repaint now. It cannot pull from the scheduler: the scheduler
     /// pushes, and there is no request a monitor may send (ARCHITECTURE.md §1.2).
     Refresh,
@@ -345,7 +352,7 @@ pub fn classify(
 ) -> Key {
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
     match (code, mods) {
-        (KeyCode::Char('c') | KeyCode::Char('C'), KeyModifiers::CONTROL) => Key::Quit,
+        (KeyCode::Char('c') | KeyCode::Char('C'), KeyModifiers::CONTROL) => Key::ForceQuit,
         (KeyCode::Char('q'), _) => Key::Quit,
         (KeyCode::Esc, _) => Key::Back,
         (KeyCode::Up | KeyCode::Char('k'), _) => Key::Up,
@@ -611,12 +618,47 @@ mod tests {
     }
 
     #[test]
+    fn leaving_a_detail_view_does_not_end_the_session() {
+        // `q` read as "quit the program" from inside a node's detail view,
+        // which is not what someone pressing it there wants: they want out of
+        // the view they opened. Ctrl-C is the key that still ends the session
+        // wherever it is pressed.
+        for leave in [Key::Quit, Key::Back] {
+            let mut app = App::new();
+            app.apply(connected());
+            app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\n"));
+            app.on_key(Key::Down);
+            app.on_key(Key::Enter);
+            assert!(app.detail, "{leave:?} needs a detail view to leave");
+
+            app.on_key(leave);
+            assert!(!app.detail, "{leave:?} should close the view");
+            assert!(!app.should_quit, "{leave:?} should not end the session");
+
+            // ...and then it means quit, because there is nothing left to leave.
+            app.on_key(leave);
+            assert!(app.should_quit, "{leave:?} at the top level still quits");
+        }
+    }
+
+    #[test]
+    fn ctrl_c_quits_from_inside_a_view() {
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\n"));
+        app.on_key(Key::Down);
+        app.on_key(Key::Enter);
+        app.on_key(Key::ForceQuit);
+        assert!(app.should_quit, "Ctrl-C does not unwind, it quits");
+    }
+
+    #[test]
     fn key_bindings_match_the_documented_set() {
         let n = KeyModifiers::NONE;
         assert_eq!(classify(KeyCode::Char('q'), n), Key::Quit);
         assert_eq!(
             classify(KeyCode::Char('c'), KeyModifiers::CONTROL),
-            Key::Quit
+            Key::ForceQuit
         );
         assert_eq!(classify(KeyCode::Esc, n), Key::Back);
         assert_eq!(classify(KeyCode::Char('k'), n), Key::Up);
@@ -644,7 +686,7 @@ mod tests {
         // an unbound key and must stay harmless.
         assert_eq!(
             classify(KeyCode::Char('c'), KeyModifiers::CONTROL),
-            Key::Quit
+            Key::ForceQuit
         );
         assert_eq!(classify(KeyCode::Char('c'), KeyModifiers::NONE), Key::Ignored);
     }

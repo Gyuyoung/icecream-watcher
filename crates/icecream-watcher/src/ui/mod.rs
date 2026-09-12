@@ -1221,11 +1221,11 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
     // a sort key that the detail view ignores would be a small lie.
     if let Some(node) = app.detail_node() {
         return Line::from(vec![
-            Span::styled("Esc", key),
+            Span::styled("Esc/q", key),
             Span::styled(" back  ", dim),
             Span::styled("↑↓/jk", key),
             Span::styled(" scroll  ", dim),
-            Span::styled("q", key),
+            Span::styled("Ctrl-C", key),
             Span::styled(" quit", dim),
             Span::styled(
                 format!("   {}", node.name()),
@@ -1266,12 +1266,12 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             "keys",
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("  q, Ctrl-C    quit"),
+        Line::from("  Ctrl-C       quit, wherever you are"),
         Line::from("  ↑ / k        move up"),
         Line::from("  ↓ / j        move down"),
         Line::from("  PgUp / PgDn  move ten rows"),
         Line::from("  Enter        open or close the node detail view"),
-        Line::from("  Esc          close this, leave the detail view, or quit"),
+        Line::from("  q, Esc       close this, leave the detail view, or quit"),
         Line::from("  r            redraw; while disconnected, retry now"),
         Line::from("  s            cycle sort"),
         Line::from("  n / i / l / p  sort by name / jobs / load / speed"),
