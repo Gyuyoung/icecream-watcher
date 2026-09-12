@@ -20,7 +20,7 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 7 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS 2min                      │
+│NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS HISTORY (2min)            │
 │build01                      16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀      15       8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
 │build02                      16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀      10         14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
 │build03                      16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀       8         14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
@@ -93,8 +93,13 @@ yellow mean *state* here — a problem badge, a saturated metric, a hot sensor �
 a healthy node that happened to hash into that range would read as a node in
 trouble.
 
-The history strip gets one character row, so four levels rather than the eight a
-block sparkline gives, but twice the horizontal resolution — for "has this node
+`JOBS HISTORY (2min)` is a record over time, not another reading of now: once a
+second it samples what fraction of that node's slots are busy. It is not
+cumulative — a node that quietens down sends the line back down. The axis is a
+fixed two minutes at every terminal width, so two nodes can be read against each
+other, and a monitor started thirty seconds ago fills only the right-hand quarter
+it has earned. The strip gets one character row, so four levels rather than the
+eight a block sparkline gives, but twice the horizontal resolution — for "has this node
 been busy, and is it busier now than a minute ago" that is the better trade, and
 the exact figure is one column to the left. Narrower terminals drop whole columns rather than
 squeezing every one into uselessness; spare width goes to hostnames first,
@@ -110,16 +115,16 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │  healthy                                                                                                           │
 │                                                                                                                    │
 │JOBS                                                                                                                │
-│    Job   1  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
-│    Job   2  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
-│    Job   3  (   0.0s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
-│    Job   4  (   0.0s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
-│    Job   5  (   0.0s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
-│    Job   6  (   0.0s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
-│    Job   7  (   0.0s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
-│    Job   8  (   0.0s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
-│    Job   9  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
-│    Job  10  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   1  (   0.1s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job   2  (   0.1s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   3  (   0.1s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
+│    Job   4  (   0.1s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
+│    Job   5  (   0.1s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
+│    Job   6  (   0.1s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
+│    Job   7  (   0.1s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
+│    Job   8  (   0.1s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
+│    Job   9  (   0.1s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job  10  (   0.1s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
 │    6 of 16 slots free                                                                                              │
 │                                                                                                                    │
 │NODE                                                                                                                │

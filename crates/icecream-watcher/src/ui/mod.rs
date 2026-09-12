@@ -709,6 +709,10 @@ const SPEED_WIDTH: u16 = 6;
 /// Never narrower than this, so the column keeps a recognisable shape even for
 /// a cluster of two-slot machines.
 const MIN_SLOT_BAR: usize = 4;
+/// Width at which the graph column can spell its heading out rather than
+/// abbreviate it. Below this the long form would be truncated, which reads
+/// worse than the short one.
+const GRAPH_LONG_HEADER: usize = 19;
 /// Below this a history graph shows too little time to be worth a column.
 const MIN_GRAPH: usize = 10;
 /// Beyond this the graph stops growing. Two dot columns per character means 60
@@ -772,7 +776,15 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         header.push(Cell::from("SPEED"));
     }
     if cols.graph > 0 {
-        header.push(Cell::from("JOBS 2min"));
+        // "HISTORY" because the column is a record over time, not another
+        // reading of now — the figures to its left already give that. The
+        // window is named because the axis is a fixed two minutes at every
+        // width, so two nodes' graphs can be read against each other.
+        header.push(Cell::from(if cols.graph >= GRAPH_LONG_HEADER {
+            "JOBS HISTORY (2min)"
+        } else {
+            "JOBS 2min"
+        }));
     }
 
     let rows: Vec<Row> = app
@@ -1576,6 +1588,25 @@ mod tests {
     }
 
     #[test]
+    fn the_history_column_spells_itself_out_when_it_fits() {
+        // Truncating a long heading reads worse than choosing a short one.
+        let app = busy_cluster();
+        let header_of = |w: u16| {
+            render(&app, w, 24)
+                .lines()
+                .find(|l| l.contains("NODE"))
+                .expect("header")
+                .to_owned()
+        };
+        let wide = header_of(150);
+        assert!(wide.contains("JOBS HISTORY (2min)"), "{wide}");
+
+        let narrow = header_of(92);
+        assert!(narrow.contains("JOBS 2min"), "{narrow}");
+        assert!(!narrow.contains("HISTOR"), "no half a word: {narrow}");
+    }
+
+    #[test]
     fn an_idle_meter_is_still_visible() {
         // An idle row is dimmed on purpose, and the baseline used to be drawn in
         // DarkGray on top of that — the two together left the meter a smudge,
@@ -1792,7 +1823,10 @@ mod tests {
     #[test]
     fn a_node_history_graph_appears_when_there_is_room() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(out.contains("JOBS 2min"), "{out}");
+        assert!(
+            out.contains("JOBS HISTORY (2min)") || out.contains("JOBS 2min"),
+            "{out}"
+        );
 
         // A working node has drawn dots; an idle one has a measured zero, not a
         // blank — and both differ from a node that is not drawn at all.
