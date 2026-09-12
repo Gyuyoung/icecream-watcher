@@ -333,28 +333,28 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Draw a rule across the band at row `y`, reaching its borders.
+/// Draw a rule across the inside of the band at row `y`.
 ///
-/// Dotted, and darker than the border it meets: it divides the inside of one
-/// area rather than marking where that area ends, so it should be findable
-/// without being read as a second frame. Only the two end cells are solid, and
-/// they take the border's colour.
+/// Dotted, and darker than the frame it sits inside: it divides one area rather
+/// than marking where that area ends, so it should be findable without being
+/// read as a second frame. The two end cells carry the frame's own sides on
+/// through, unbroken and in their colour.
 fn separator(frame: &mut Frame, area: Rect, y: u16) {
     if area.width < 2 || y >= area.y + area.height {
         return;
     }
-    // Plain line segments at the ends rather than the tee joins `\u{251c}` and
-    // `\u{2524}`: they belong to the frame, so they take its colour, but they
-    // are not drawn as a fork in it. Only the span between them is dimmed.
-    let cap = Style::default().fg(BORDER_COLOUR);
+    // The frame's own sides, carried straight through: the rule divides the
+    // inside of the band, and the band's outline has no business changing shape
+    // where it does. Only the span between the sides is dimmed.
+    let side = Style::default().fg(BORDER_COLOUR);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("\u{2500}", cap),
+            Span::styled("\u{2502}", side),
             Span::styled(
                 "\u{2508}".repeat(area.width as usize - 2),
                 Style::default().fg(SEPARATOR_COLOUR),
             ),
-            Span::styled("\u{2500}", cap),
+            Span::styled("\u{2502}", side),
         ])),
         Rect {
             x: area.x,
