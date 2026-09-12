@@ -263,9 +263,21 @@ const SERIES_ROWS_LARGE: usize = 3;
 /// drew a line that competed with the band's own border.
 const SEPARATOR_COLOUR: Color = Color::Rgb(64, 64, 64);
 
-/// The band's frame, and the two ends of every rule that joins it. Named rather
-/// than inherited so the joins cannot drift away from what they join.
-const BORDER_COLOUR: Color = Color::White;
+/// Each area's frame gets its own colour, the way `btop` gives every box one:
+/// two outlines in the same white read as one panel with a line through it,
+/// where two hues say "these are different questions" before either is read.
+///
+/// Taken from btop's Dracula theme, which is where this borrowed the idea:
+/// its CPU box — the meters and graphs at the top, which is what the band is —
+/// is purple, and its process box, the list underneath, is cyan. Its red is the
+/// network box, and red here would read as an alarm rather than as a frame.
+fn band_border() -> Color {
+    widgets::rgb(0xbd, 0x93, 0xf9)
+}
+
+fn table_border() -> Color {
+    widgets::rgb(0x8b, 0xe9, 0xfd)
+}
 
 /// Rows spent dividing the three series. Two braille fields that touch read as
 /// one graph with a kink in it, so each series after the first gets a rule.
@@ -293,7 +305,7 @@ const BAND_MIN_GRAPH: usize = 20;
 /// Three lines that answer the whole-cluster questions on their own.
 fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summary) {
     let block = Block::bordered()
-        .border_style(Style::default().fg(BORDER_COLOUR))
+        .border_style(Style::default().fg(band_border()))
         .title(Span::styled(
             " ICECREAM CLUSTER ",
             Style::default().add_modifier(Modifier::BOLD),
@@ -346,7 +358,7 @@ fn separator(frame: &mut Frame, area: Rect, y: u16) {
     // The frame's own sides, carried straight through: the rule divides the
     // inside of the band, and the band's outline has no business changing shape
     // where it does. Only the span between the sides is dimmed.
-    let side = Style::default().fg(BORDER_COLOUR);
+    let side = Style::default().fg(band_border());
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled("\u{2502}", side),
@@ -884,7 +896,11 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
                     .add_modifier(Modifier::BOLD),
             ),
         )
-        .block(Block::bordered().title(title))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(table_border()))
+                .title(title),
+        )
         .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .column_spacing(1);
 

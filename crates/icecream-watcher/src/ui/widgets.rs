@@ -181,6 +181,19 @@ fn nearest_cube(r: u8, g: u8, b: u8) -> Color {
     Color::Indexed((16 + 36 * level(r) + 6 * level(g) + level(b)) as u8)
 }
 
+/// A fixed colour, rounded to the 6x6x6 cube where 24-bit colour is off.
+///
+/// Use this rather than `Color::Rgb` for anything chosen by hand: on a terminal
+/// that cannot show RGB, the cube is what it will approximate to anyway, and
+/// rounding here keeps that approximation ours.
+pub fn rgb(r: u8, g: u8, b: u8) -> Color {
+    if truecolor() {
+        Color::Rgb(r, g, b)
+    } else {
+        nearest_cube(r, g, b)
+    }
+}
+
 /// The screen's own background: real black, not the terminal's colour 0.
 ///
 /// Colour 0 is whatever the user's theme says it is — Solarized paints it a
