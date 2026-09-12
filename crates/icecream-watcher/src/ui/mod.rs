@@ -712,7 +712,7 @@ const MIN_SLOT_BAR: usize = 4;
 /// Width at which the graph column can spell its heading out rather than
 /// abbreviate it. Below this the long form would be truncated, which reads
 /// worse than the short one.
-const GRAPH_LONG_HEADER: usize = 19;
+const GRAPH_LONG_HEADER: usize = 12;
 /// Below this a history graph shows too little time to be worth a column.
 const MIN_GRAPH: usize = 10;
 /// Beyond this the graph stops growing. Two dot columns per character means 60
@@ -778,12 +778,11 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.graph > 0 {
         // "HISTORY" because the column is a record over time, not another
         // reading of now — the figures to its left already give that. The
-        // window is named because the axis is a fixed two minutes at every
-        // width, so two nodes' graphs can be read against each other.
+        // window it covers is in the help overlay rather than the heading.
         header.push(Cell::from(if cols.graph >= GRAPH_LONG_HEADER {
-            "JOBS HISTORY (2min)"
+            "JOBS HISTORY"
         } else {
-            "JOBS 2min"
+            "JOBS"
         }));
     }
 
@@ -1176,6 +1175,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  MAX / ACTIVE compile slots configured, and how many are busy now"),
         Line::from("  JOBS         one cell per slot, coloured by the node's CPU use"),
         Line::from("               green → yellow → red; grey means no agent to ask"),
+        Line::from("  JOBS HISTORY the last two minutes of that node's slot occupancy,"),
+        Line::from("               sampled once a second; the axis is 2 min at any width"),
         Line::from("  RECEIVE      jobs compiled here for the cluster, since connect"),
         Line::from("  SEND         jobs submitted from here; blank means a pure server"),
         Line::from("  SPEED        output bytes per user-second; — until a node compiles"),
@@ -1599,10 +1600,11 @@ mod tests {
                 .to_owned()
         };
         let wide = header_of(150);
-        assert!(wide.contains("JOBS HISTORY (2min)"), "{wide}");
+        assert!(wide.contains("JOBS HISTORY"), "{wide}");
 
-        let narrow = header_of(92);
-        assert!(narrow.contains("JOBS 2min"), "{narrow}");
+        // Narrow enough that the long form would be cut: the heading falls back
+        // rather than showing half a word.
+        let narrow = header_of(34);
         assert!(!narrow.contains("HISTOR"), "no half a word: {narrow}");
     }
 
@@ -1823,10 +1825,7 @@ mod tests {
     #[test]
     fn a_node_history_graph_appears_when_there_is_room() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(
-            out.contains("JOBS HISTORY (2min)") || out.contains("JOBS 2min"),
-            "{out}"
-        );
+        assert!(out.contains("JOBS HISTORY"), "{out}");
 
         // A working node has drawn dots; an idle one has a measured zero, not a
         // blank — and both differ from a node that is not drawn at all.

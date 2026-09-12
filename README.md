@@ -20,7 +20,7 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 7 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS HISTORY (2min)            │
+│NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS HISTORY                   │
 │build01                      16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀      15       8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
 │build02                      16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀      10         14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
 │build03                      16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀       8         14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
@@ -93,8 +93,8 @@ yellow mean *state* here — a problem badge, a saturated metric, a hot sensor �
 a healthy node that happened to hash into that range would read as a node in
 trouble.
 
-`JOBS HISTORY (2min)` is a record over time, not another reading of now: once a
-second it samples what fraction of that node's slots are busy. It is not
+`JOBS HISTORY` is a record over time, not another reading of now: once a second
+it samples what fraction of that node's slots are busy. It is not
 cumulative — a node that quietens down sends the line back down. The axis is a
 fixed two minutes at every terminal width, so two nodes can be read against each
 other, and a monitor started thirty seconds ago fills only the right-hand quarter
