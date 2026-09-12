@@ -41,6 +41,17 @@ use ratatui::Frame;
 
 use crate::app::App;
 
+/// Text that labels or annotates rather than answers: the words beside a
+/// figure in the header, the key hints in the footer.
+///
+/// A named grey rather than the terminal's DIM attribute. DIM is a request, not
+/// a colour — some terminals halve the brightness of a white that is already
+/// being drawn on a painted black background, which leaves a label all but
+/// unreadable, and others ignore it entirely, which leaves no hierarchy at all.
+fn secondary() -> Color {
+    widgets::rgb(160, 160, 160)
+}
+
 /// Shown when a metric is not available. Distinct from `0`.
 pub(crate) const UNKNOWN: &str = "—";
 
@@ -149,13 +160,13 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
             // scheduler this is, and the second is which network it speaks for.
             spans.push(Span::styled(
                 "Scheduler: ",
-                Style::default().add_modifier(Modifier::DIM),
+                Style::default().fg(secondary()),
             ));
             spans.push(Span::raw(format!("{target}")));
             if let Some(netname) = netname {
                 spans.push(Span::styled(
                     "  NetName: ",
-                    Style::default().add_modifier(Modifier::DIM),
+                    Style::default().fg(secondary()),
                 ));
                 spans.push(Span::raw(netname.clone()));
             }
@@ -164,7 +175,7 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
                     "  proto {protocol}  up {}",
                     widgets::duration(since.elapsed().as_secs())
                 ),
-                Style::default().add_modifier(Modifier::DIM),
+                Style::default().fg(secondary()),
             ));
             // A different scheduler answering discovery means every host id,
             // node and counter now belongs to another cluster. Saying so beats
@@ -183,7 +194,7 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
                 if quiet >= QUIET_AFTER {
                     spans.push(Span::styled(
                         format!("  quiet {}", widgets::brief_duration(quiet.as_secs())),
-                        Style::default().add_modifier(Modifier::DIM),
+                        Style::default().fg(secondary()),
                     ));
                 }
             }
@@ -211,7 +222,7 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
             };
             spans.push(Span::styled(
                 format!("  retry {when} (attempt {attempt})"),
-                Style::default().add_modifier(Modifier::DIM),
+                Style::default().fg(secondary()),
             ));
         }
     }
@@ -219,13 +230,13 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
     if cluster.is_connected() {
         spans.push(Span::styled(
             format!("   sort {}", app.sort.label()),
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default().fg(secondary()),
         ));
         let _ = summary;
     }
     spans.push(Span::styled(
         "   [?] help",
-        Style::default().add_modifier(Modifier::DIM),
+        Style::default().fg(secondary()),
     ));
 
     Line::from(spans)
@@ -484,7 +495,7 @@ fn slots_block(
     // three. What is wrong with a node that *is* here shows on its own row.
     let health = vec![Span::styled(
         format!("{:<7}{} online", "", summary.nodes_online),
-        Style::default().add_modifier(Modifier::DIM),
+        Style::default().fg(secondary()),
     )];
 
     // Utilisation has a real maximum, so the gradient by height means what it
@@ -511,7 +522,7 @@ fn queue_block(
     let trend_style = match trend {
         Trend::Rising if summary.pending_jobs > 0 => Style::default().fg(Color::Yellow),
         Trend::Falling => Style::default().fg(Color::Green),
-        _ => Style::default().add_modifier(Modifier::DIM),
+        _ => Style::default().fg(secondary()),
     };
 
     let head = vec![
@@ -524,7 +535,7 @@ fn queue_block(
             "{:<7}peak {peak:.0} · {} remote · {} local",
             "", summary.active_jobs, summary.local_jobs
         ),
-        Style::default().add_modifier(Modifier::DIM),
+        Style::default().fg(secondary()),
     )];
 
     // Peak-scaled, so a flat colour rather than the utilisation gradient: the
@@ -547,7 +558,7 @@ fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>
     let head = vec![label("Rate"), band_value(format!("{now:.0}/s"))];
     let notes = vec![Span::styled(
         format!("{:<7}peak {peak:.0}/s · {}", "", build_note(cluster)),
-        Style::default().add_modifier(Modifier::DIM),
+        Style::default().fg(secondary()),
     )];
 
     let glyphs = graph::area(&dots(history, width), peak, width, rows);
@@ -636,7 +647,7 @@ fn queue_line(cluster: &Cluster, summary: &Summary, bar_width: usize) -> Line<'s
     let trend_style = match trend {
         Trend::Rising if summary.pending_jobs > 0 => Style::default().fg(Color::Yellow),
         Trend::Falling => Style::default().fg(Color::Green),
-        _ => Style::default().add_modifier(Modifier::DIM),
+        _ => Style::default().fg(secondary()),
     };
 
     vec![
@@ -656,14 +667,14 @@ fn queue_line(cluster: &Cluster, summary: &Summary, bar_width: usize) -> Line<'s
         // the whole window from reading as "full".
         Span::styled(
             format!(" peak {peak:.0}"),
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default().fg(secondary()),
         ),
         Span::styled(
             format!(
                 "   {} remote · {} local",
                 summary.active_jobs, summary.local_jobs
             ),
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default().fg(secondary()),
         ),
     ]
     .into()
@@ -685,11 +696,11 @@ fn rate_line(cluster: &Cluster, bar_width: usize) -> Line<'static> {
         ),
         Span::styled(
             format!("  peak {peak:.0}/s"),
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default().fg(secondary()),
         ),
         Span::styled(
             format!("   {}", build_note(cluster)),
-            Style::default().add_modifier(Modifier::DIM),
+            Style::default().fg(secondary()),
         ),
     ]
     .into()
@@ -946,7 +957,7 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     };
     let title = Line::from(vec![
         Span::styled(" NODES", Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(detail, Style::default().add_modifier(Modifier::DIM)),
+        Span::styled(detail, Style::default().fg(secondary())),
     ]);
 
     let table = Table::new(rows, constraints)
@@ -1057,7 +1068,7 @@ fn files_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
 
     let mut spans = vec![Span::raw(name)];
     if !more.is_empty() {
-        spans.push(Span::styled(more, Style::default().add_modifier(Modifier::DIM)));
+        spans.push(Span::styled(more, Style::default().fg(secondary())));
     }
     Line::from(spans)
 }
@@ -1256,7 +1267,7 @@ fn speed_cell<'a>(node: &Node, median: Option<f64>, cluster: &Cluster) -> Line<'
         if slow {
             Style::default().fg(Color::LightRed)
         } else {
-            Style::default().add_modifier(Modifier::DIM)
+            Style::default().fg(secondary())
         },
     )];
     if slow {
@@ -1277,7 +1288,7 @@ fn dim<'a>(text: String) -> Line<'a> {
 // ---------------------------------------------------------------- footer
 
 fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
-    let dim = Style::default().add_modifier(Modifier::DIM);
+    let dim = Style::default().fg(secondary());
     let key = Style::default().fg(Color::Cyan);
     let _ = summary;
 
@@ -1331,7 +1342,7 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
 /// than the cost of losing a session's counters — they all restart at connect.
 fn confirm_quit_overlay(frame: &mut Frame, area: Rect) {
     let key = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
-    let dim = Style::default().add_modifier(Modifier::DIM);
+    let dim = Style::default().fg(secondary());
     let lines = vec![
         Line::from(Span::raw("Quit icecream-watcher?")),
         Line::from(""),
