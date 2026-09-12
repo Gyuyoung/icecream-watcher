@@ -12,11 +12,10 @@
 //! * a **cluster band** answers the whole-cluster questions before the table is
 //!   read at all: slot occupancy as a bar, queue depth as a sparkline with the
 //!   trend spelled out in a word, and throughput;
-//! * **three bars per node** (CPU, memory, slots) carry the metrics that matter,
-//!   comparable across rows without reading a single figure;
-//! * **colour carries state**, ramping only as a metric becomes a problem, and a
-//!   `!` marks the metric that makes a node a bottleneck, so CPU-bound and
-//!   memory-bound are distinguishable at a glance;
+//! * **one bar per node** — how full its compile slots are — comparable across
+//!   rows without reading a single figure, beside the file it is working on;
+//! * **colour carries state**, ramping only as a node fills up, so a saturated
+//!   machine is picked out of a list of quiet ones at a glance;
 //! * **idle is quiet, unhealthy is loud** — idle rows dim, offline rows sink and
 //!   strike through;
 //! * everything else — IP, platform, protocol, features, per-core detail,
@@ -769,7 +768,7 @@ const MIN_FILES: usize = 14;
 const MAX_FILES: usize = 64;
 /// How wide a hostname column may grow when there is space going spare.
 const NAME_MAX: usize = 38;
-/// Cells kept beside the longest name for its badge, so `no ack` or `cpu!` does
+/// Cells kept beside the longest name for its badge, so `no ack` or `stale` does
 /// not immediately start eliding the name it belongs to.
 const BADGE_ROOM: usize = 8;
 
@@ -1079,13 +1078,12 @@ pub(crate) fn elide(text: &str, max: usize) -> String {
 /// characters suggests, and the unfilled part keeps a baseline rather than going
 /// blank — otherwise what the fill is a fraction *of* disappears.
 ///
-/// Colour carries the node's **CPU utilisation** on a green-to-red ramp, so how
-/// hard the machine behind the meter is actually working is legible without
-/// reading a figure or decoding a badge — which is what the old `cpu!` marker
-/// did, at one threshold instead of a scale. It needs an agent on the node; with
-/// no reading the slots are drawn neutral rather than green, because "not
-/// measured" must not look like "idle". Which node *submitted* each job is in
-/// the detail view's job list: a cell cannot carry two meanings.
+/// Colour ramps with the same fraction, green through yellow to red, so a node
+/// with nothing left to give is picked out of a list without reading its
+/// figures. It carried the node's CPU utilisation instead, which needs an agent
+/// on the machine: on a cluster where most nodes have none, the column was
+/// neutral grey on machines that were in fact pegged, and a colour that is
+/// absent exactly when it would be interesting is worse than no colour at all.
 fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     if width == 0 {
         return Line::raw("");
@@ -1109,7 +1107,7 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     let pct = node.slot_pct().unwrap_or(0.0);
     let (filled, trough) = graph::bar_split(pct, width);
     Line::from(vec![
-        Span::styled(filled, Style::default().fg(load_colour(node))),
+        Span::styled(filled, Style::default().fg(slot_colour(node))),
         Span::styled(
             trough,
             // Not `DarkGray`: an idle row is dimmed as well, and the two
@@ -1121,17 +1119,18 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     ])
 }
 
-/// What the busy part of a node's meter is coloured by: how hard its CPU is
-/// working, green through yellow to red.
+/// What a node's meter is coloured by: how full its slots are, green through
+/// yellow to red.
 ///
-/// `None` from the agent is drawn neutral rather than at the green end of the
-/// ramp. A node nobody is measuring must not look like a node with nothing to
-/// do — the same rule the graphs follow for a gap.
-fn load_colour(node: &Node) -> Color {
-    match node.cpu_pct() {
-        Some(pct) => widgets::heat(pct / 100.0),
-        None => Color::Gray,
-    }
+/// The same figure the bar's length carries, on purpose. It was the node's CPU
+/// utilisation, which reads well but needs an agent on the machine — and a
+/// cluster where most nodes have none was a column of neutral grey saying
+/// nothing about machines that were pegged. Slot occupancy comes from the
+/// scheduler, so it is known for every node that is here at all, and colour and
+/// length now answer the same question twice rather than hiding a second one
+/// inside the first. CPU, where an agent reports it, is in the detail view.
+fn slot_colour(node: &Node) -> Color {
+    widgets::heat(node.slot_pct().unwrap_or(0.0) / 100.0)
 }
 
 /// The unfilled part of a meter. Bright enough to survive an idle row's dimming,
@@ -1254,8 +1253,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from("  Max / Active compile slots configured, and how many are busy now"),
-        Line::from("  Jobs         one cell per slot, coloured by the node's CPU use"),
-        Line::from("               green → yellow → red; grey means no agent to ask"),
+        Line::from("  Jobs         how full this node's compile slots are, as a bar"),
+        Line::from("               green → yellow → red; every row's bar is one width"),
         Line::from("  Files        the file this node has been compiling longest,"),
         Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
@@ -1721,8 +1720,9 @@ mod tests {
         colours
     }
 
-    /// One node, one running job, and a CPU reading to colour it by.
-    fn node_at_cpu(name: &str, id: u32, cpu: Option<f32>) -> App {
+    /// One node with `busy` of its eight slots taken, and an agent only if
+    /// `cpu` says so.
+    fn node_at_slots(name: &str, id: u32, busy: u32, cpu: Option<f32>) -> App {
         let mut app = App::new();
         app.apply(connected());
         app.apply(stats(
@@ -1732,41 +1732,47 @@ mod tests {
         if let Some(cpu) = cpu {
             app.apply_resource(id, ResourceResult::Ok(snapshot(name, cpu, 100, None)));
         }
-        app.apply(Update::Event(Event::JobBegin {
-            job_id: 500,
-            start_time: 0,
-            host_id: id,
-        }));
+        for job in 0..busy {
+            app.apply(Update::Event(Event::JobBegin {
+                job_id: 500 + job,
+                start_time: 0,
+                host_id: id,
+            }));
+        }
         app
     }
 
     #[test]
-    fn the_meter_is_coloured_by_the_nodes_cpu_use() {
-        // What the old `cpu!` badge said at one threshold, as a scale.
-        let idle = meter_colours(&node_at_cpu("idle", 1, Some(5.0)), "idle");
-        let busy = meter_colours(&node_at_cpu("busy", 1, Some(95.0)), "busy");
+    fn the_meter_is_coloured_by_how_full_the_node_is() {
+        let quiet = meter_colours(&node_at_slots("quiet", 1, 1, None), "quiet");
+        let full = meter_colours(&node_at_slots("full", 1, 8, None), "full");
 
-        assert_eq!(idle, vec![widgets::heat(0.05)]);
-        assert_eq!(busy, vec![widgets::heat(0.95)]);
-        assert_ne!(idle, busy, "the same colour at 5% and 95% says nothing");
+        assert_eq!(quiet, vec![widgets::heat(0.125)]);
+        assert_eq!(full, vec![widgets::heat(1.0)]);
+        assert_ne!(quiet, full, "the same colour at 1 of 8 and 8 of 8 says nothing");
     }
 
     #[test]
     fn every_node_uses_the_same_scale() {
         // Not a colour per node: two machines working equally hard must look
         // equally hard-working, whoever they are.
-        let a = meter_colours(&node_at_cpu("alpha", 1, Some(70.0)), "alpha");
-        let b = meter_colours(&node_at_cpu("omega", 2, Some(70.0)), "omega");
+        let a = meter_colours(&node_at_slots("alpha", 1, 6, None), "alpha");
+        let b = meter_colours(&node_at_slots("omega", 2, 6, None), "omega");
         assert_eq!(a, b);
     }
 
     #[test]
-    fn a_node_with_no_agent_is_not_drawn_as_idle() {
-        // Green would claim a measurement nobody took. The rule the graphs
-        // follow for a gap applies to colour too.
-        let unknown = meter_colours(&node_at_cpu("dark", 1, None), "dark");
-        assert_eq!(unknown, vec![Color::Gray]);
-        assert_ne!(unknown, vec![widgets::heat(0.0)]);
+    fn a_node_with_no_agent_is_coloured_like_any_other() {
+        // Occupancy comes from the scheduler, so the colour does not depend on
+        // anything being installed on the node. It used to: a machine with no
+        // agent was drawn neutral however full it was, which on a cluster where
+        // most nodes have none left the colour saying nothing exactly where it
+        // would have said the most.
+        let full_no_agent = meter_colours(&node_at_slots("dark", 1, 8, None), "dark");
+        let full_with_agent =
+            meter_colours(&node_at_slots("lit", 2, 8, Some(4.0)), "lit");
+        assert_eq!(full_no_agent, full_with_agent);
+        assert_ne!(full_no_agent, vec![Color::Gray], "grey said nothing at all");
     }
 
     #[test]
