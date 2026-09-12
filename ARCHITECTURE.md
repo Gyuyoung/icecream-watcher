@@ -1092,6 +1092,38 @@ other cell on that row correctly said `—`.
 | the fact is not destroyed | `1 left` in the band, and a count in `Totals` |
 | an unknown node leaving is harmless | a `State:Offline` for a host id we never saw changes nothing |
 
+## 8j. `IN` / `OUT`, and what they actually mean — **done**
+
+Reading the columns against a real build raised the question the labels could
+not answer: two of three nodes showed `IN` figures and an `OUT` of zero. That is
+correct — the build was running on the third machine, so it was the only
+submitter and the other two were pure compile servers — but nothing on screen
+said so.
+
+Checking it turned up a wording bug. `jobs_out` was documented as "jobs this
+node submitted that were compiled **elsewhere**", and the code increments it for
+the submitter regardless of where the job lands. The scheduler will happily place
+a job back on the machine that asked for it, and such a job counts in that
+node's `IN` *and* its `OUT`. The label claimed a distinction the code never made.
+
+The property worth knowing, and now asserted: across a cluster the `IN` figures
+sum to the `OUT` figures, because every `MON_JOB_BEGIN` credits exactly one
+compiler and exactly one submitter. In the screenshot that raised the question,
+15 + 53 + 27 = 95 = the MacBook's `OUT` — which is also evidence that no job's
+`MON_GET_CS` was missed, since a job whose submitter is unknown is credited to
+nobody's `OUT` and breaks the sum.
+
+The help overlay now explains the columns that are not self-evident — `MAX`,
+`ACTIVE`, the `JOBS` meter's colouring, `IN`, `OUT`, `LOAD` and the node
+colours — rather than only the keys. The cluster band's first row is labelled
+`JOBS` too: the figure is work running, and the slot count is what it is running
+out of.
+
+| Claim | Evidence |
+|---|---|
+| a job scheduled back onto its submitter counts both ways | asserted directly, which is what the old wording denied |
+| the columns balance | 20 jobs spread across two compilers: `IN` sums to `OUT` sums to 20 |
+
 ## 9. Open questions for Phase 2+
 
 - **Agent transport.** HTTP/JSON (trivially debuggable with `curl`, easy `node_exporter` parity) vs

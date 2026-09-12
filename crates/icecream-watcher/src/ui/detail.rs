@@ -304,7 +304,10 @@ fn node_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
     ));
     out.push(field(
         "jobs out",
-        format!("{} submitted and compiled elsewhere", node.jobs_out),
+        format!(
+            "{} submitted from here — a node that submits none is a pure compile server",
+            node.jobs_out
+        ),
     ));
     out.push(field(
         "jobs local",

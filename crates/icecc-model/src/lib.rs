@@ -81,7 +81,11 @@ pub struct Node {
     pub local_jobs: BTreeSet<u32>,
     /// Remote jobs this node has compiled for others, since connect.
     pub jobs_in: u64,
-    /// Jobs this node submitted that were compiled elsewhere, since connect.
+    /// Jobs submitted from this node, since connect.
+    ///
+    /// Not "compiled elsewhere": the scheduler may well place a job back on the
+    /// machine that asked for it, and that job counts in this node's `jobs_in`
+    /// *and* its `jobs_out`.
     pub jobs_out: u64,
     /// Jobs this node compiled locally, since connect.
     pub jobs_local: u64,
@@ -1036,6 +1040,36 @@ mod tests {
         pass(Duration::from_millis(2));
         c.tick_history();
         assert_eq!(c.pending_history.last(), Some(0.0));
+    }
+
+    #[test]
+    fn a_job_scheduled_back_onto_its_submitter_counts_in_both_directions() {
+        // OUT is "submitted from here", not "compiled elsewhere": the scheduler
+        // may well place a job on the machine that asked for it, and the label
+        // used to claim otherwise.
+        let mut c = cluster_with_two_nodes();
+        c.apply(get_cs(7, 1));
+        c.apply(job_begin(7, 1)); // submitted by node 1, compiled on node 1
+
+        assert_eq!(c.nodes[&1].jobs_out, 1);
+        assert_eq!(c.nodes[&1].jobs_in, 1);
+        assert_eq!(c.nodes[&2].jobs_out, 0);
+    }
+
+    #[test]
+    fn every_submitted_job_is_counted_against_exactly_one_compiler() {
+        // The property that makes the IN and OUT columns readable together: a
+        // cluster's INs sum to its OUTs, so a mismatch means an attribution was
+        // lost rather than that a node is idle.
+        let mut c = cluster_with_two_nodes();
+        for job in 0..20u32 {
+            c.apply(get_cs(job, 1));
+            c.apply(job_begin(job, if job % 3 == 0 { 1 } else { 2 }));
+        }
+        let total_in: u64 = c.nodes.values().map(|n| n.jobs_in).sum();
+        let total_out: u64 = c.nodes.values().map(|n| n.jobs_out).sum();
+        assert_eq!(total_in, 20);
+        assert_eq!(total_in, total_out);
     }
 
     // -------------------------------------------------- nodes leaving

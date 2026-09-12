@@ -331,7 +331,7 @@ fn slots_block(
 ) -> Vec<Line<'static>> {
     let pct = summary.slot_usage();
     let mut head = vec![
-        label("SLOTS"),
+        label("JOBS"),
         band_value(format!("{}/{}", summary.used_slots, summary.total_slots)),
     ];
     match pct {
@@ -446,7 +446,9 @@ fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>
 /// "How many compile slots are occupied?" and "is the cluster healthy?"
 fn slots_line(summary: &Summary, bar_width: usize) -> Line<'static> {
     let mut spans = vec![
-        label("SLOTS"),
+        // "JOBS", not "SLOTS": the figure is work running, and the slot count
+        // is what it is running out of. The table's column says the same.
+        label("JOBS"),
         band_value(format!("{}/{}", summary.used_slots, summary.total_slots)),
     ];
 
@@ -1107,11 +1109,16 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             "reading the screen",
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("  —            not measured; needs icecream-watcher-agent on that node"),
-        Line::from("  !            the metric limiting this node, or a slow outlier"),
+        Line::from("  MAX / ACTIVE compile slots configured, and how many are busy now"),
+        Line::from("  JOBS         one cell per slot, coloured by whoever submitted the job"),
+        Line::from("  IN           jobs compiled here for the cluster, since connect"),
+        Line::from("  OUT          jobs submitted from here; 0 means a pure compile server"),
+        Line::from("  SPEED        output bytes per user-second; — until a node compiles"),
+        Line::from("  LOAD         the scheduler's placement weight, not CPU utilisation"),
+        Line::from("  —            not measured, or not reported by this node"),
+        Line::from("  !            what is limiting this node, or a slow outlier"),
         Line::from("  dim row      idle"),
-        Line::from("  SPEED        output bytes per user-second; blank until a node compiles"),
-        Line::from("  LOAD         coloured by load per core, so node sizes compare"),
+        Line::from("  node colour  keyed by hostname, so a node keeps it across re-sorts"),
     ];
 
     let width = 74u16.min(area.width.saturating_sub(4)).max(20);
@@ -1243,7 +1250,7 @@ mod tests {
             .unwrap_or_else(|| panic!("no {needle} line in:\n{out}"));
         let mut block = vec![lines[at]];
         for line in lines.iter().skip(at + 1) {
-            if ["SLOTS", "QUEUE", "RATE"].iter().any(|l| line.contains(l)) || line.contains('└') {
+            if ["JOBS", "QUEUE", "RATE"].iter().any(|l| line.contains(l)) || line.contains('└') {
                 break;
             }
             block.push(line);
@@ -1405,13 +1412,13 @@ mod tests {
     fn the_cluster_band_answers_the_whole_cluster_questions() {
         let out = render(&busy_cluster(), 130, 24);
         assert!(out.contains("CLUSTER"), "{out}");
-        assert!(out.contains("SLOTS"), "{out}");
+        assert!(out.contains("JOBS"), "{out}");
         assert!(out.contains("QUEUE"), "{out}");
         assert!(out.contains("RATE"), "{out}");
         // Occupancy as a figure, and as two minutes of shape beside it.
         assert!(out.contains("2/24"), "{out}");
         assert!(
-            series_lines(&out, "SLOTS").iter().any(|l| l.chars().any(is_braille)),
+            series_lines(&out, "JOBS").iter().any(|l| l.chars().any(is_braille)),
             "expected a graph beside the figures: {out}"
         );
         assert!(out.contains("3 online"), "{out}");
@@ -1960,7 +1967,7 @@ mod tests {
         // each other, which a stagger of even three columns defeats.
         for height in [20u16, 26, 44] {
             let out = render(&app, 130, height);
-            let slots = graph_span(&out, "SLOTS");
+            let slots = graph_span(&out, "JOBS");
             assert_eq!(
                 graph_span(&out, "QUEUE"),
                 slots,
@@ -2023,7 +2030,7 @@ mod tests {
         // counting those would pass for the wrong reason.
         let rows_of = |h: u16| {
             let out = render(&app, 130, h);
-            ["SLOTS", "QUEUE", "RATE"]
+            ["JOBS", "QUEUE", "RATE"]
                 .iter()
                 .map(|s| series_lines(&out, s).len())
                 .sum::<usize>()
@@ -2048,8 +2055,10 @@ mod tests {
         let out = render(&app, 130, 20);
         let queue = out.lines().find(|l| l.contains("QUEUE")).unwrap();
         let first = queue.find('▁').expect("one sample should be drawn");
-        let slots = out.lines().find(|l| l.contains("SLOTS")).unwrap();
-        let bar = slots.find('░').expect("slots bar");
+        // The band's JOBS line, which comes before the table's column of the
+        // same name.
+        let slots = out.lines().find(|l| l.contains("JOBS")).unwrap();
+        let bar = slots.find('░').expect("occupancy bar");
         assert!(
             first > bar,
             "a single sample belongs at the right edge, not the left:\n{out}"
