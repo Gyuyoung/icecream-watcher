@@ -263,6 +263,10 @@ const SERIES_ROWS_LARGE: usize = 3;
 /// drew a line that competed with the band's own border.
 const SEPARATOR_COLOUR: Color = Color::Rgb(64, 64, 64);
 
+/// The band's frame, and the two ends of every rule that joins it. Named rather
+/// than inherited so the joins cannot drift away from what they join.
+const BORDER_COLOUR: Color = Color::White;
+
 /// Rows spent dividing the three series. Two braille fields that touch read as
 /// one graph with a kink in it, so each series after the first gets a rule.
 const SEPARATOR_ROWS: usize = 2;
@@ -288,10 +292,12 @@ const BAND_MIN_GRAPH: usize = 20;
 
 /// Three lines that answer the whole-cluster questions on their own.
 fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summary) {
-    let block = Block::bordered().title(Span::styled(
-        " ICECREAM CLUSTER ",
-        Style::default().add_modifier(Modifier::BOLD),
-    ));
+    let block = Block::bordered()
+        .border_style(Style::default().fg(BORDER_COLOUR))
+        .title(Span::styled(
+            " ICECREAM CLUSTER ",
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -337,12 +343,19 @@ fn separator(frame: &mut Frame, area: Rect, y: u16) {
     if area.width < 2 || y >= area.y + area.height {
         return;
     }
-    let rule = format!("\u{251c}{}\u{2524}", "\u{2508}".repeat(area.width as usize - 2));
+    // The two ends belong to the frame, not to the rule: they are the border's
+    // own corners turned inward, so they are drawn in the border's colour and
+    // only the span between them is dimmed.
+    let cap = Style::default().fg(BORDER_COLOUR);
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            rule,
-            Style::default().fg(SEPARATOR_COLOUR),
-        ))),
+        Paragraph::new(Line::from(vec![
+            Span::styled("\u{251c}", cap),
+            Span::styled(
+                "\u{2508}".repeat(area.width as usize - 2),
+                Style::default().fg(SEPARATOR_COLOUR),
+            ),
+            Span::styled("\u{2524}", cap),
+        ])),
         Rect {
             x: area.x,
             y,
