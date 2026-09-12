@@ -63,7 +63,7 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
     // without room for the table it would answer questions about rows nobody
     // can see. Given room, each series gets extra rows and its graph is drawn
     // in braille dots, which only pay off with height (ui::graph).
-    let band_height = band_height(area.height);
+    let band_height = band_height(area.height, cluster.nodes.len());
     let areas = Layout::vertical([
         Constraint::Length(1),           // header
         Constraint::Length(band_height), // cluster band
@@ -203,19 +203,50 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
 /// so the band only grows once there is room the table does not need. The
 /// thresholds are the point at which spending three more rows still leaves a
 /// usable list.
-fn band_height(total: u16) -> u16 {
-    match total {
-        h if h >= 40 => 3 * SERIES_ROWS_LARGE as u16 + 2,
-        h if h >= 24 => 3 * SERIES_ROWS_TALL as u16 + 2,
-        h if h >= 12 => 3 + 2,
-        _ => 0,
-    }
+fn band_height(total: u16, nodes: usize) -> u16 {
+    let floor = match total {
+        h if h >= 40 => SERIES_ROWS_LARGE,
+        h if h >= 24 => SERIES_ROWS_TALL,
+        // Compact: one line per series, no graphs to give height to.
+        h if h >= 12 => return 3 + 2,
+        _ => return 0,
+    };
+
+    // Then grow into whatever the table is not going to use. A three-node
+    // cluster on a tall terminal left twenty empty rows under the list while
+    // the graphs above it were squeezed into two, and the jobs graph's colour
+    // comes from a row's height — two rows is two colours, where a gradient
+    // wants a dozen. The table keeps its border, its heading, a row per node
+    // and one spare, so a node arriving does not resize the band.
+    let table_wants = nodes as u16 + 4;
+    let floor_height = 3 * floor as u16 + 2;
+    let spare = total.saturating_sub(1 + 1 + table_wants + floor_height);
+    // All of the spare goes to the jobs series, because [`series_rows`] gives
+    // it everything the other two do not take.
+    let jobs = (floor + spare as usize).min(SERIES_ROWS_MAX);
+    (jobs + 2 * floor) as u16 + 2
+}
+
+/// How the band's inner height is shared out: `(jobs, each of queue and rate)`.
+///
+/// Colour in the jobs graph comes from how high a row sits on a 0..100 axis, so
+/// its rows *are* the steps of its gradient — two rows is two colours, where an
+/// eye reads a gradient at closer to a dozen. Queue and rate are peak-scaled and
+/// drawn in one flat colour each, which a few rows show as well as many. So they
+/// take a floor and jobs takes the rest.
+fn series_rows(inner: usize) -> (usize, usize) {
+    let side = (inner / 6).clamp(SERIES_ROWS_TALL, SERIES_ROWS_LARGE);
+    (inner.saturating_sub(2 * side), side)
 }
 
 /// Rows per series once the band is tall enough for dot graphs.
 const SERIES_ROWS_TALL: usize = 2;
 /// Rows per series on a large terminal.
 const SERIES_ROWS_LARGE: usize = 3;
+/// Rows a series may grow to when the node table does not need the space.
+/// Past this the band would be taking room from a list nobody asked to shrink,
+/// and the gradient has long since stopped getting visibly finer.
+const SERIES_ROWS_MAX: usize = 12;
 
 /// Width reserved for a series' label, figure and notes in the tall layout.
 ///
@@ -240,13 +271,14 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let rows = inner.height as usize / 3;
+    let height = inner.height as usize;
     let graph_width = (inner.width as usize).saturating_sub(BAND_LEFT);
-    if rows >= SERIES_ROWS_TALL && graph_width >= BAND_MIN_GRAPH {
-        let mut lines = Vec::with_capacity(rows * 3);
-        lines.extend(slots_block(summary, cluster, graph_width, rows));
-        lines.extend(queue_block(cluster, summary, graph_width, rows));
-        lines.extend(rate_block(cluster, graph_width, rows));
+    if height >= 3 * SERIES_ROWS_TALL && graph_width >= BAND_MIN_GRAPH {
+        let (jobs, side) = series_rows(height);
+        let mut lines = Vec::with_capacity(height);
+        lines.extend(slots_block(summary, cluster, graph_width, jobs));
+        lines.extend(queue_block(cluster, summary, graph_width, side));
+        lines.extend(rate_block(cluster, graph_width, side));
         frame.render_widget(Paragraph::new(lines), inner);
         return;
     }
@@ -1445,6 +1477,30 @@ mod tests {
             app.tick_history();
         }
         app
+    }
+
+    #[test]
+    fn the_band_grows_into_room_the_table_is_not_using() {
+        // Three nodes on a tall terminal used to leave twenty empty rows under
+        // the list while the graphs above it were squeezed into two each.
+        let short_list = band_height(50, 3);
+        let long_list = band_height(50, 40);
+        assert!(
+            short_list > long_list,
+            "a list with room to spare should give it to the band: {short_list} vs {long_list}"
+        );
+        // The table is still first in the queue for rows in both cases.
+        assert!(50 - 2 - short_list >= 3 + 4, "the table keeps its rows");
+        assert!(long_list >= 3 * SERIES_ROWS_TALL as u16 + 2, "and the band keeps graphs");
+    }
+
+    #[test]
+    fn the_jobs_graph_is_given_the_height_its_gradient_is_made_of() {
+        let (jobs, side) = series_rows(band_height(50, 3) as usize - 2);
+        // Its colour comes from the row, so rows are gradient steps: two rows
+        // is two colours, which is a banding rather than a ramp.
+        assert!(jobs >= 8, "not enough steps to read as a gradient: {jobs}");
+        assert!(jobs > side, "the flat-coloured series must not take it: {jobs} vs {side}");
     }
 
     #[test]
