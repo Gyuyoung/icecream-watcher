@@ -299,19 +299,19 @@ fn node_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
 
     out.push(Line::raw(""));
     out.push(field(
-        "jobs in",
-        format!("{} compiled here for others", node.jobs_in),
+        "received",
+        format!("{} compiled here for the cluster", node.jobs_in),
     ));
     out.push(field(
-        "jobs out",
+        "sent",
         format!(
-            "{} submitted from here — a node that submits none is a pure compile server",
+            "{} submitted from here — a node that sends none is a pure compile server",
             node.jobs_out
         ),
     ));
     out.push(field(
-        "jobs local",
-        format!("{} compiled here for itself", node.jobs_local),
+        "local",
+        format!("{} compiled here outside the cluster", node.jobs_local),
     ));
     out.push(Line::from(Span::styled(
         "    (job counts are since this monitor connected)",

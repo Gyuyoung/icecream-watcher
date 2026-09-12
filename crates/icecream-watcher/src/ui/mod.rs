@@ -601,7 +601,8 @@ struct Columns {
     /// Slots in use and slots configured, as plain numbers.
     cur_max: bool,
     slot_bar: usize,
-    /// `IN` / `OUT`: work actually done here, and work sent from here.
+    /// `RECEIVE` / `SEND`: work compiled here for the cluster, and work
+    /// submitted from here.
     jobs: bool,
     load: bool,
     speed: bool,
@@ -616,7 +617,7 @@ struct Columns {
 /// dropped instead of every column being squeezed into uselessness. The graph
 /// then takes whatever is left, so a wide terminal spends its space on history
 /// rather than on padding.
-fn columns(width: u16) -> Columns {
+fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
     let mut cols = match width {
         w if w >= 108 => Columns {
             name: 24,
@@ -665,6 +666,11 @@ fn columns(width: u16) -> Columns {
         },
     };
 
+    // The meter needs a cell per slot and not one more: sized to the breakpoint
+    // alone, a cluster of 8-slot machines left half the column empty and pushed
+    // everything right of it away for nothing. The spare goes to the graph.
+    cols.slot_bar = cols.slot_bar.min(widest_node.max(MIN_SLOT_BAR));
+
     let fixed = cols.name as usize
         + cols.slot_bar
         + if cols.cur_max { (COUNT_WIDTH as usize + 1) * 2 } else { 0 }
@@ -675,12 +681,16 @@ fn columns(width: u16) -> Columns {
     // little slack so the graph never collides with the right-hand border.
     let mut spare = (width as usize).saturating_sub(fixed + 6);
 
-    // Names come first with space going spare: an elided hostname costs the
+    // Names come first with space going spare — an elided hostname costs the
     // reader more than a shorter graph does, and build hosts are often named at
-    // length. Only once every column already fits, though — on a narrow
-    // terminal the same rule hands most of the screen to one column.
+    // length — but only as far as the longest name actually needs. Widening to
+    // a fixed maximum left a column of empty cells on a cluster of short names
+    // and pushed everything after it away for nothing.
     if width >= 108 {
-        let widen = (spare / 2).min(NAME_MAX.saturating_sub(cols.name as usize));
+        let wanted = (longest_name + BADGE_ROOM).min(NAME_MAX);
+        let widen = spare
+            .min(wanted.saturating_sub(cols.name as usize))
+            .min(spare / 2);
         cols.name += widen as u16;
         spare -= widen;
     }
@@ -693,9 +703,12 @@ fn columns(width: u16) -> Columns {
 
 /// Width of the `MAX` and `ACTIVE` job-count columns.
 const COUNT_WIDTH: u16 = 6;
-const JOBS_WIDTH: u16 = 6;
+const JOBS_WIDTH: u16 = 7;
 const LOAD_WIDTH: u16 = 5;
 const SPEED_WIDTH: u16 = 6;
+/// Never narrower than this, so the column keeps a recognisable shape even for
+/// a cluster of two-slot machines.
+const MIN_SLOT_BAR: usize = 4;
 /// Below this a history graph shows too little time to be worth a column.
 const MIN_GRAPH: usize = 10;
 /// Beyond this the graph stops growing. Two dot columns per character means 60
@@ -704,10 +717,25 @@ const MIN_GRAPH: usize = 10;
 const MAX_GRAPH: usize = 60;
 /// How wide a hostname column may grow when there is space going spare.
 const NAME_MAX: usize = 38;
+/// Cells kept beside the longest name for its badge, so `no ack` or `cpu!` does
+/// not immediately start eliding the name it belongs to.
+const BADGE_ROOM: usize = 8;
 
 fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let cluster = &app.cluster;
-    let cols = columns(area.width);
+    let widest = cluster
+        .nodes
+        .values()
+        .map(|n| n.max_jobs() as usize)
+        .max()
+        .unwrap_or(0);
+    let longest_name = cluster
+        .nodes
+        .values()
+        .map(|n| n.name().chars().count())
+        .max()
+        .unwrap_or(0);
+    let cols = columns(area.width, widest, longest_name);
     let stale_after = cluster.metrics_stale_after;
     let median_speed = cluster.median_speed();
 
@@ -726,8 +754,16 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     }
     header.push(Cell::from(format!("{:<width$}", "JOBS", width = cols.slot_bar)));
     if cols.jobs {
-        header.push(Cell::from(format!("{:>width$}", "IN", width = JOBS_WIDTH as usize)));
-        header.push(Cell::from(format!("{:>width$}", "OUT", width = JOBS_WIDTH as usize)));
+        header.push(Cell::from(format!(
+            "{:>width$}",
+            "RECEIVE",
+            width = JOBS_WIDTH as usize
+        )));
+        header.push(Cell::from(format!(
+            "{:>width$}",
+            "SEND",
+            width = JOBS_WIDTH as usize
+        )));
     }
     if cols.load {
         header.push(Cell::from("LOAD"));
@@ -834,15 +870,20 @@ fn node_row<'a>(
     Row::new(cells).style(row_style)
 }
 
-/// A counter since connect, right-aligned. Zero is dimmed rather than hidden:
-/// "this node has compiled nothing" is an answer, and a blank is not.
+/// A counter since connect, right-aligned, with zero left blank.
+///
+/// Blank rather than `0` so the eye lands only on the cells that carry a
+/// figure — the convention a ledger uses — and blank rather than `—` because
+/// the two are different facts and this table shows both on the same row: `—`
+/// means the value is *unknown* (`LOAD` with nothing reporting it, `SPEED`
+/// before a node has compiled anything), while an empty counter means the
+/// answer is known and it is none. A node whose `OUT` is empty is a pure
+/// compile server, which is information, not a gap.
 fn count_cell<'a>(value: u64, width: usize) -> Line<'a> {
-    let text = format!("{value:>width$}");
     if value == 0 {
-        dim(text)
-    } else {
-        Line::from(Span::raw(text))
+        return Line::raw(" ".repeat(width));
     }
+    Line::from(Span::raw(format!("{value:>width$}")))
 }
 
 /// Two minutes of this node's slot occupancy, in braille dots.
@@ -1111,11 +1152,12 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         )),
         Line::from("  MAX / ACTIVE compile slots configured, and how many are busy now"),
         Line::from("  JOBS         one cell per slot, coloured by whoever submitted the job"),
-        Line::from("  IN           jobs compiled here for the cluster, since connect"),
-        Line::from("  OUT          jobs submitted from here; 0 means a pure compile server"),
+        Line::from("  RECEIVE      jobs compiled here for the cluster, since connect"),
+        Line::from("  SEND         jobs submitted from here; blank means a pure server"),
         Line::from("  SPEED        output bytes per user-second; — until a node compiles"),
         Line::from("  LOAD         the scheduler's placement weight, not CPU utilisation"),
         Line::from("  —            not measured, or not reported by this node"),
+        Line::from("  blank count  none, which is different from — : the answer is known"),
         Line::from("  !            what is limiting this node, or a slow outlier"),
         Line::from("  dim row      idle"),
         Line::from("  node colour  keyed by hostname, so a node keeps it across re-sorts"),
@@ -1547,6 +1589,74 @@ mod tests {
     }
 
     #[test]
+    fn a_zero_counter_is_blank_and_an_unknown_one_is_a_dash() {
+        // Two different facts that would otherwise look identical on the same
+        // row: "this node submitted nothing" is measured, "we have no load
+        // figure for it" is not.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:server\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\nSpeed:3000\n",
+        ));
+        app.apply(Update::Event(Event::GetCs {
+            job_id: 1,
+            client_id: 1,
+            filename: "a.cc".into(),
+            lang: 1,
+        }));
+        app.apply(Update::Event(Event::JobBegin {
+            job_id: 1,
+            start_time: 0,
+            host_id: 1,
+        }));
+        // A second node that compiles for the first but submits nothing.
+        app.apply(stats(
+            2,
+            "Name:pureserver\nIP:10.0.0.2\nMaxJobs:8\nNoRemote:false\nSpeed:3000\n",
+        ));
+        app.apply(Update::Event(Event::GetCs {
+            job_id: 2,
+            client_id: 1,
+            filename: "b.cc".into(),
+            lang: 1,
+        }));
+        app.apply(Update::Event(Event::JobBegin {
+            job_id: 2,
+            start_time: 0,
+            host_id: 2,
+        }));
+
+        let out = render(&app, 130, 24);
+        let server = row_for(&out, "pureserver");
+
+        // Everything after the meter: IN, OUT, LOAD, SPEED. A blank OUT drops
+        // out of the token list entirely; a printed 0 would not.
+        let tail: Vec<&str> = server
+            .chars()
+            .position(|c| c == SLOT_FREE)
+            .map(|i| &server[server.char_indices().nth(i).unwrap().0..])
+            .unwrap_or(server)
+            .split_whitespace()
+            .skip(1) // the meter itself
+            .take(3) // ...and stop before the history graph and the border
+            .collect();
+        assert_eq!(
+            tail,
+            ["1", UNKNOWN, "3000"],
+            "expected RECEIVE 1, SEND blank, LOAD unknown, SPEED 3000: {server}"
+        );
+
+        // Both figures are on the same row and mean different things: the OUT
+        // cell is empty because the answer is none, the LOAD cell is a dash
+        // because there is no answer.
+        assert_eq!(server.matches(UNKNOWN).count(), 1, "{server}");
+
+        // MAX and ACTIVE are non-zero here, so they still print.
+        assert!(server.contains("8      1"), "{server}");
+    }
+
+    #[test]
     fn max_and_active_are_plain_numbers_beside_the_meter() {
         let out = render(&busy_cluster(), 130, 24);
         let header = out.lines().find(|l| l.contains("NODE")).unwrap();
@@ -1621,7 +1731,7 @@ mod tests {
             .lines()
             .find(|l| l.contains("NODE"))
             .expect("header row");
-        for icecream in ["MAX", "ACTIVE", "JOBS", "IN", "OUT", "LOAD", "SPEED"] {
+        for icecream in ["MAX", "ACTIVE", "JOBS", "RECEIVE", "SEND", "LOAD", "SPEED"] {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
@@ -1755,6 +1865,59 @@ mod tests {
     }
 
     #[test]
+    fn columns_are_sized_to_the_cluster_not_to_the_breakpoint() {
+        // Space spent on a column that nothing fills is space taken from every
+        // column after it. Both of these left a block of empty cells and pushed
+        // the rest of the row right for nothing.
+        let small = {
+            let mut app = App::new();
+            app.apply(connected());
+            app.apply(stats(1, "Name:a\nIP:10.0.0.1\nMaxJobs:4\nNoRemote:false\n"));
+            render(&app, 130, 24)
+        };
+        let large = {
+            let mut app = App::new();
+            app.apply(connected());
+            app.apply(stats(
+                1,
+                "Name:a-very-long-build-host.corp\nIP:10.0.0.1\nMaxJobs:16\nNoRemote:false\n",
+            ));
+            render(&app, 130, 24)
+        };
+
+        // The meter is exactly one cell per slot on the widest node.
+        assert_eq!(slot_meter(row_for(&small, "a ")).chars().count(), 4);
+        assert_eq!(slot_meter(row_for(&large, "a-very")).chars().count(), 16);
+
+        // And the name column follows the longest name rather than a constant.
+        let name_col = |out: &str| {
+            out.lines()
+                .find(|l| l.contains("NODE"))
+                .unwrap()
+                .find("MAX")
+                .unwrap()
+        };
+        assert!(
+            name_col(&small) < name_col(&large),
+            "short names should not reserve a long column:\n{small}"
+        );
+    }
+
+    #[test]
+    fn a_long_name_still_gets_room_for_its_badge() {
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            1,
+            "Name:a-very-long-build-host.corp\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:true\n",
+        ));
+        let out = render(&app, 130, 24);
+        let row = row_for(&out, "a-very-long-build-host.corp");
+        assert!(row.contains("local"), "the badge must still fit: {row}");
+        assert!(!row.contains('…'), "and the name must not be cut: {row}");
+    }
+
+    #[test]
     fn narrow_terminals_drop_columns_rather_than_squeezing_every_bar() {
         let app = busy_cluster();
 
@@ -1767,12 +1930,12 @@ mod tests {
         };
 
         let wide = header_of(130);
-        assert!(wide.contains("OUT") && wide.contains("SPEED"), "{wide}");
+        assert!(wide.contains("SEND") && wide.contains("SPEED"), "{wide}");
 
         // Job counters go first: they are a tally, and a tally is the easiest
         // thing to read one column to the right in the detail view.
         let medium = header_of(80);
-        assert!(!medium.contains("OUT"), "{medium}");
+        assert!(!medium.contains("SEND"), "{medium}");
         assert!(medium.contains("SPEED"), "{medium}");
 
         let narrow = header_of(65);
@@ -2244,7 +2407,7 @@ mod tests {
         // Everything the scheduler says about the node.
         for field in [
             "name", "IP", "platform", "protocol", "features", "max jobs",
-            "speed", "load", "load average", "free memory", "jobs in", "jobs out",
+            "speed", "load", "load average", "free memory", "received", "sent",
         ] {
             assert!(out.contains(field), "missing {field}:\n{out}");
         }

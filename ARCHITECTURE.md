@@ -1124,6 +1124,37 @@ out of.
 | a job scheduled back onto its submitter counts both ways | asserted directly, which is what the old wording denied |
 | the columns balance | 20 jobs spread across two compilers: `IN` sums to `OUT` sums to 20 |
 
+## 8k. Naming and spacing the counters — **done**
+
+`IN` and `OUT` became `RECEIVE` and `SEND`, which say what they are without a
+legend: work compiled here for the cluster, and work submitted from here.
+
+**A zero counter is blank; `—` still means unknown.** These are different facts
+and the table shows both on one row — an empty `SEND` says the answer is known
+and it is none (a pure compile server), while `LOAD —` says there is no figure.
+Rendering the zero as `—`, which is the obvious-looking simplification, would
+make the two indistinguishable in the row where the distinction matters. Blank
+is the ledger convention and collides with neither.
+
+The longer headings made the row's spacing worth measuring rather than
+assuming, and two columns turned out to be reserving cells nothing filled:
+
+* the **meter** was sized by the terminal breakpoint, so a cluster of 8-slot
+  machines left half of a 16-cell column empty and pushed everything after it
+  right. It now gets one cell per slot on the *largest node in the cluster*;
+* the **name column** widened to a fixed 38 whenever there was room, so a
+  cluster of short names paid the same. It now follows the longest hostname,
+  plus room for its badge.
+
+Both give what they save to the history graph. Space spent on a column that
+nothing fills is space taken from every column after it.
+
+| Claim | Evidence |
+|---|---|
+| a zero reads differently from an unknown | one row asserted to hold a blank `SEND`, a dashed `LOAD` and exactly one `—` |
+| columns fit the cluster | meter width asserted to equal the largest node's slot count at 4 and at 16; the name column asserted to start `MAX` earlier for short names |
+| a long name keeps its badge | a 27-character hostname renders with `local` and without an ellipsis |
+
 ## 9. Open questions for Phase 2+
 
 - **Agent transport.** HTTP/JSON (trivially debuggable with `curl`, easy `node_exporter` parity) vs

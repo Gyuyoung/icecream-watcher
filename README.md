@@ -20,14 +20,14 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 7 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                                      MAX ACTIVE JOBS                 IN    OUT LOAD  SPEED  JOBS 2min          │
-│build01 cpu!                               16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀     15      8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02 mem!                               16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀     10      0 14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
-│build03                                    16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀      8      0 14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
-│build04                                    16      4 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      4      9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build05                                     8      0 ⣀⣀⣀⣀⣀⣀⣀⣀              0      0 14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build07                                    16      0 ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      0     10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│laptop local                               12      1 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀          1     11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS 2min                      │
+│build01 cpu!                 16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀      15       8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02 mem!                 16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀      10         14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build03                      16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀       8         14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
+│build04                      16      4 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       4       9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build05                       8        ⣀⣀⣀⣀⣀⣀⣀⣀                         14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│build07                      16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀              10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
+│laptop local                 12      1 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀           1      11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
 │                                                                                                                    │
 │                                                                                                                    │
 │                                                                                                                    │
@@ -43,10 +43,18 @@ q quit  ↑↓/jk select  Enter detail  s sort  n i l p by name/jobs/load/speed 
 ```
 
 Reading it: every column is an **Icecream** figure — compile slots, jobs
-compiled here (`IN`) and submitted from here (`OUT`), the scheduler's load, and
-compile speed. A node whose `OUT` is 0 is a pure compile server: it takes work
-and sends none. Across a cluster the `IN` figures sum to the `OUT` figures, so a
-mismatch means an attribution was lost, not that a node is idle.
+compiled here (`RECEIVE`) and submitted from here (`SEND`), the scheduler's load,
+and compile speed. A node whose `SEND` is empty is a pure compile server: it
+takes work and sends none. Across a cluster the `RECEIVE` figures sum to the
+`SEND` figures, so a mismatch means an attribution was lost, not that a node is
+idle.
+
+**A zero counter is blank, and `—` means unknown.** They are different facts and
+this table shows both on the same row: an empty `SEND` says the answer is known
+and it is none, while `LOAD —` says there is no figure to show. Columns are also
+sized to the cluster rather than to a fixed maximum — the meter gets one cell per
+slot on the largest node, and the name column follows the longest hostname — so
+nothing is padded out with cells that nothing fills.
 A machine's CPU, memory and temperature are its own business and appear nowhere
 but as the conclusion drawn from them: `build01` is badged `cpu!` and `build02`
 `mem!`, the answer to "why is this node not taking more work" without the gauges
