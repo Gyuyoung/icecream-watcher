@@ -59,6 +59,21 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
     let cluster = &app.cluster;
     let summary = cluster.summary();
 
+    // Paint the screen rather than inheriting the terminal's own background.
+    // Every colour here — the load ramp, the node palette, the dimming that
+    // marks an idle row — was chosen against black, and on a light terminal
+    // the pale end of each ramp disappears into the page. The foreground goes
+    // with it: a terminal whose default text is dark would otherwise leave
+    // every unstyled span black on black.
+    frame.render_widget(
+        Block::default().style(
+            Style::default()
+                .bg(widgets::background())
+                .fg(Color::White),
+        ),
+        area,
+    );
+
     // The cluster band is the first thing to go when the terminal is short:
     // without room for the table it would answer questions about rows nobody
     // can see. Given room, each series gets extra rows and its graph is drawn
@@ -1250,7 +1265,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
                     .title(" icecream-watcher help ")
                     .title_alignment(Alignment::Center),
             )
-            .style(Style::default().bg(Color::Black)),
+            .style(Style::default().bg(widgets::background()).fg(Color::White)),
         popup,
     );
 }
@@ -1424,7 +1439,31 @@ mod tests {
     /// The text-only `render` helper cannot see styling, and a colour scheme
     /// that silently stopped being applied would look identical to one that
     /// works.
+    /// The colour of the first character of `name` where it is drawn.
+    fn name_colour(app: &App, width: u16, height: u16, name: &str) -> Color {
+        let (buf, row) = rendered_row(app, width, height, name);
+        let line: String = (0..buf.area.width)
+            .map(|x| buf[(x, row)].symbol().to_owned())
+            .collect();
+        // Cells, not bytes: a name sits to the right of a border character.
+        let at = line.find(name).map_or(0, |byte| line[..byte].chars().count());
+        buf[(at as u16, row)].style().fg.unwrap_or(Color::Reset)
+    }
+
     fn row_colours(app: &App, width: u16, height: u16, name: &str) -> Vec<Color> {
+        let (buf, row) = rendered_row(app, width, height, name);
+        (0..buf.area.width)
+            .map(|x| buf[(x, row)].style().fg.unwrap_or(Color::Reset))
+            .collect()
+    }
+
+    /// The rendered screen, and the row `name` appears on.
+    fn rendered_row(
+        app: &App,
+        width: u16,
+        height: u16,
+        name: &str,
+    ) -> (ratatui::buffer::Buffer, u16) {
         let mut ui = Ui::default();
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|f| draw(f, app, &mut ui)).unwrap();
@@ -1438,10 +1477,7 @@ mod tests {
                     .contains(name)
             })
             .unwrap_or_else(|| panic!("no row for {name}"));
-
-        (0..buf.area.width)
-            .map(|x| buf[(x, row)].style().fg.unwrap_or(Color::Reset))
-            .collect()
+        (buf, row)
     }
 
     /// The two figures immediately left of the meter: MAX and ACTIVE. Read by
@@ -1518,6 +1554,31 @@ mod tests {
             app.tick_history();
         }
         app
+    }
+
+    #[test]
+    fn the_screen_paints_its_own_background() {
+        // Every colour here was chosen against black. On a light terminal the
+        // pale end of each ramp would wash out, and an unstyled span would be
+        // dark text on a dark fill — so the background is painted, not
+        // inherited, and that holds with the help overlay open too.
+        for help in [false, true] {
+            let mut app = busy_cluster();
+            app.show_help = help;
+            let mut ui = Ui::default();
+            let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+            terminal.draw(|f| draw(f, &app, &mut ui)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            for y in 0..buf.area.height {
+                for x in 0..buf.area.width {
+                    assert_eq!(
+                        buf[(x, y)].style().bg,
+                        Some(widgets::background()),
+                        "cell {x},{y} is not painted (help: {help})"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -1838,14 +1899,9 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         for id in 1..=12u32 {
             let name = format!("build{id:02}");
-            let colours = row_colours(&app, 130, 30, &name);
-            // The colour a node is drawn in, taken from the first cell of its
-            // name rather than from anywhere a badge or figure might sit.
-            let first = colours
-                .iter()
-                .find(|c| **c != Color::Reset)
-                .copied()
-                .unwrap_or(Color::Reset);
+            // The colour a node is drawn in, read at the first cell of its
+            // name rather than anywhere a badge or figure might sit.
+            let first = name_colour(&app, 130, 30, &name);
             assert!(
                 matches!(first, Color::Indexed(_)),
                 "{name} is not drawn in a node colour: {first:?}"

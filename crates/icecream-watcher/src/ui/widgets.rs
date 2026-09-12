@@ -181,6 +181,20 @@ fn nearest_cube(r: u8, g: u8, b: u8) -> Color {
     Color::Indexed((16 + 36 * level(r) + 6 * level(g) + level(b)) as u8)
 }
 
+/// The screen's own background: real black, not the terminal's colour 0.
+///
+/// Colour 0 is whatever the user's theme says it is — Solarized paints it a
+/// dark slate, and a light theme may paint it something else again — so a
+/// palette tuned against black would be sitting on an unknown colour. Where
+/// 24-bit colour is off, the cube's own black is the closest thing available.
+pub fn background() -> Color {
+    if truecolor() {
+        Color::Rgb(0, 0, 0)
+    } else {
+        Color::Indexed(16) // the 6x6x6 cube's black, not palette slot 0
+    }
+}
+
 /// A colour from the green-to-red ramp. `0.0` is green, `1.0` is red.
 pub fn heat(fraction: f32) -> Color {
     let (r, g, b) = heat_rgb(fraction);
