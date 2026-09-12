@@ -111,6 +111,11 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
     if app.show_help {
         help_overlay(frame, area);
     }
+    // Last, so it sits over the help as well: it is the question being asked,
+    // and nothing behind it will answer.
+    if app.confirm_quit {
+        confirm_quit_overlay(frame, area);
+    }
 }
 
 /// Silence longer than this is worth stating in the header. Chosen above the
@@ -1293,6 +1298,59 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
 
 // ---------------------------------------------------------------- help
 
+/// "Really quit?", centred over whatever is on the screen.
+///
+/// A monitor is left running for a day at a time, and `q` sits next to keys
+/// that are pressed all the time, so the cost of asking once is much smaller
+/// than the cost of losing a session's counters — they all restart at connect.
+fn confirm_quit_overlay(frame: &mut Frame, area: Rect) {
+    let key = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let lines = vec![
+        Line::from(Span::raw("Quit icecream-watcher?")),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("y", key),
+            Span::styled("  quit", dim),
+            Span::raw("      "),
+            Span::styled("n", key),
+            Span::styled(" / ", dim),
+            Span::styled("Esc", key),
+            Span::styled("  stay", dim),
+        ]),
+        Line::from(Span::styled(
+            "counters restart on the next connect",
+            dim,
+        )),
+    ];
+
+    let width = 42u16.min(area.width.saturating_sub(4)).max(20);
+    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    let [popup] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(area);
+    let [popup] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(popup);
+
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .alignment(Alignment::Center)
+            .block(
+                Block::bordered()
+                    .border_style(Style::default().fg(band_border()))
+                    .title(Span::styled(
+                        " QUIT ",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ))
+                    .title_alignment(Alignment::Center),
+            )
+            .style(Style::default().bg(widgets::background()).fg(Color::White)),
+        popup,
+    );
+}
+
 fn help_overlay(frame: &mut Frame, area: Rect) {
     let lines = vec![
         Line::from(Span::styled(
@@ -1304,7 +1362,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  ↓ / j        move down"),
         Line::from("  PgUp / PgDn  move ten rows"),
         Line::from("  Enter        open or close the node detail view"),
-        Line::from("  q, Esc       close this, leave the detail view, or quit"),
+        Line::from("  q, Esc       close this, leave the detail view, then ask to quit"),
         Line::from("  r            redraw; while disconnected, retry now"),
         Line::from("  s            cycle sort"),
         Line::from("  n / i / l / p  sort by name / jobs / load / speed"),
@@ -2971,6 +3029,19 @@ mod tests {
     }
 
     #[test]
+    fn the_quit_prompt_puts_the_question_on_the_screen() {
+        let mut app = busy_cluster();
+        app.on_key(crate::app::Key::Quit);
+        let out = render(&app, 130, 24);
+        assert!(out.contains("Quit icecream-watcher?"), "{out}");
+        // Both answers named, because the keys are not guessable from a
+        // question mark alone.
+        assert!(out.contains("quit") && out.contains("stay"), "{out}");
+        // And it is over the screen, not instead of it.
+        assert!(out.contains("ICECREAM CLUSTER"), "{out}");
+    }
+
+    #[test]
     fn esc_unwinds_one_layer_at_a_time() {
         let mut app = busy_cluster();
         detail_of(&mut app, "build01");
@@ -2985,7 +3056,8 @@ mod tests {
         assert!(!app.should_quit, "leaving the detail view must not quit");
 
         app.on_key(crate::app::Key::Back);
-        assert!(app.should_quit);
+        assert!(!app.should_quit, "the last layer asks first");
+        assert!(app.confirm_quit);
     }
 
     #[test]

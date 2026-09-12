@@ -67,6 +67,9 @@ pub struct App {
     /// Scroll offset within the detail view.
     pub detail_scroll: u16,
     pub show_help: bool,
+    /// Whether the "really quit?" prompt is up. A monitor is something people
+    /// leave running for a day, and `q` is one key away from every other key.
+    pub confirm_quit: bool,
     /// Set when state changed since the last paint.
     dirty: bool,
     pub should_quit: bool,
@@ -91,6 +94,7 @@ impl App {
             detail: false,
             detail_scroll: 0,
             show_help: false,
+            confirm_quit: false,
             dirty: true,
             should_quit: false,
             events_seen: 0,
@@ -237,6 +241,26 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: Key) {
+        // The prompt takes every key while it is up: behind it is a list whose
+        // selection and sort order must not change under an answer to a
+        // question about quitting.
+        if self.confirm_quit {
+            match key {
+                // `y` and nothing else. Enter is how a node is opened, and a
+                // prompt that exists to catch a stray keystroke must not be
+                // dismissable by the most reflexive one there is.
+                Key::ForceQuit | Key::Confirm => self.should_quit = true,
+                // `n` reaches here as the sort key it is everywhere else;
+                // at a yes/no question it is the answer it looks like.
+                Key::Quit | Key::Back | Key::Sort(SortKey::Name) => {
+                    self.confirm_quit = false;
+                    self.dirty = true;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key {
             Key::ForceQuit => self.should_quit = true,
             Key::Quit | Key::Back => {
@@ -251,7 +275,8 @@ impl App {
                     self.detail = false;
                     self.dirty = true;
                 } else {
-                    self.should_quit = true;
+                    self.confirm_quit = true;
+                    self.dirty = true;
                 }
             }
             Key::Refresh => self.mark_dirty(),
@@ -279,7 +304,9 @@ impl App {
             Key::Sort(key) => self.set_sort(key),
             Key::CycleSort => self.set_sort(self.sort.next()),
             Key::Enter => self.open_detail(),
-            Key::Ignored => {}
+            // Only the quit prompt asks a yes/no question, and it answers this
+            // one itself above.
+            Key::Confirm | Key::Ignored => {}
         }
     }
 }
@@ -328,9 +355,11 @@ pub enum Key {
     Quit,
     /// Esc: leave the current overlay, or quit at the top level.
     Back,
-    /// Ctrl-C: quit from wherever you are, no unwinding. The one key that
-    /// always means what it says.
+    /// Ctrl-C: quit from wherever you are, no unwinding and no prompt. The one
+    /// key that always means what it says.
     ForceQuit,
+    /// `y` — yes, at the quit prompt. Bound nowhere else.
+    Confirm,
     /// `r` — repaint now. It cannot pull from the scheduler: the scheduler
     /// pushes, and there is no request a monitor may send (ARCHITECTURE.md §1.2).
     Refresh,
@@ -354,6 +383,7 @@ pub fn classify(
     match (code, mods) {
         (KeyCode::Char('c') | KeyCode::Char('C'), KeyModifiers::CONTROL) => Key::ForceQuit,
         (KeyCode::Char('q'), _) => Key::Quit,
+        (KeyCode::Char('y') | KeyCode::Char('Y'), _) => Key::Confirm,
         (KeyCode::Esc, _) => Key::Back,
         (KeyCode::Up | KeyCode::Char('k'), _) => Key::Up,
         (KeyCode::Down | KeyCode::Char('j'), _) => Key::Down,
@@ -615,6 +645,9 @@ mod tests {
         assert!(!app.should_quit, "esc should close the overlay first");
 
         app.on_key(Key::Back);
+        assert!(!app.should_quit, "the last layer asks before it goes");
+        assert!(app.confirm_quit);
+        app.on_key(Key::Confirm);
         assert!(app.should_quit);
     }
 
@@ -636,10 +669,51 @@ mod tests {
             assert!(!app.detail, "{leave:?} should close the view");
             assert!(!app.should_quit, "{leave:?} should not end the session");
 
-            // ...and then it means quit, because there is nothing left to leave.
+            // ...and then it means quit, once the prompt has been answered.
             app.on_key(leave);
-            assert!(app.should_quit, "{leave:?} at the top level still quits");
+            assert!(app.confirm_quit, "{leave:?} at the top level asks");
+            app.on_key(Key::Confirm);
+            assert!(app.should_quit, "{leave:?} then y quits");
         }
+    }
+
+    #[test]
+    fn the_quit_prompt_takes_every_key_until_it_is_answered() {
+        // Behind it is a list whose selection and sort order must not change
+        // under an answer to a question about quitting — and `n`, the obvious
+        // way to say no, is the key that sorts by name.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\n"));
+        app.apply(stats(2, "Name:build02\nIP:10.0.0.2\nMaxJobs:8\n"));
+        app.on_key(Key::Down);
+        let selected = app.selected;
+        app.set_sort(SortKey::Speed);
+
+        app.on_key(Key::Quit);
+        assert!(app.confirm_quit);
+
+        for ignored in [Key::Down, Key::Up, Key::Enter, Key::CycleSort] {
+            app.on_key(ignored);
+        }
+        assert_eq!(app.selected, selected, "the list moved under the prompt");
+        assert_eq!(app.sort, SortKey::Speed, "the order changed under the prompt");
+        assert!(!app.detail, "a view opened under the prompt");
+        assert!(app.confirm_quit, "the prompt should still be up");
+
+        app.on_key(Key::Sort(SortKey::Name));
+        assert!(!app.confirm_quit, "n answers no");
+        assert!(!app.should_quit);
+        assert_eq!(app.sort, SortKey::Speed, "...and does not also sort");
+    }
+
+    #[test]
+    fn ctrl_c_skips_the_prompt() {
+        let mut app = App::new();
+        app.on_key(Key::Quit);
+        assert!(app.confirm_quit);
+        app.on_key(Key::ForceQuit);
+        assert!(app.should_quit, "Ctrl-C does not stop to ask");
     }
 
     #[test]
