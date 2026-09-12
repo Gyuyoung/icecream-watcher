@@ -782,8 +782,13 @@ fn columns(width: u16, longest_name: usize) -> Columns {
 /// Width of the `Max` and `Active` job-count columns.
 const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 7;
-const LOAD_WIDTH: u16 = 5;
-const SPEED_WIDTH: u16 = 6;
+/// Wider than the figure it holds. `Load` is the first column after `Send`,
+/// and right-aligned figures in adjacent columns otherwise meet across a single
+/// cell of column spacing, which reads as one number with a gap in it.
+const LOAD_WIDTH: u16 = 6;
+/// One wider than `Load` for the same reason, plus a trailing cell for the `!`
+/// that marks a slow node, so the mark never sits against the next column.
+const SPEED_WIDTH: u16 = 7;
 /// Below this a filename is elided to the point of saying nothing, so the
 /// column is not worth its space.
 const MIN_FILES: usize = 14;
@@ -836,10 +841,20 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         )));
     }
     if cols.load {
-        header.push(Cell::from("Load"));
+        header.push(Cell::from(format!(
+            "{:>width$}",
+            "Load",
+            width = LOAD_WIDTH as usize
+        )));
     }
     if cols.speed {
-        header.push(Cell::from("Speed"));
+        // One trailing cell, which is where a `!` goes on a slow node — so the
+        // heading sits over the figures rather than over the marks beside them.
+        header.push(Cell::from(format!(
+            "{:>width$} ",
+            "Speed",
+            width = SPEED_WIDTH as usize - 1
+        )));
     }
     if cols.files > 0 {
         header.push(Cell::from("Files"));
@@ -1169,26 +1184,29 @@ const SLOT_BASELINE: Color = Color::Rgb(120, 120, 120);
 
 fn load_cell<'a>(node: &Node) -> Line<'a> {
     let Some(load) = node.load_avg_1() else {
-        return dim(format!("{UNKNOWN:>4}"));
+        return dim(format!("{UNKNOWN:>width$}", width = LOAD_WIDTH as usize));
     };
     let style = match node.load_per_core() {
         Some(per) if per >= 1.5 => Style::default().fg(Color::LightRed),
         Some(per) if per >= 1.0 => Style::default().fg(Color::Yellow),
         _ => Style::default(),
     };
-    Line::from(Span::styled(format!("{load:>4.1}"), style))
+    Line::from(Span::styled(
+        format!("{load:>width$.1}", width = LOAD_WIDTH as usize),
+        style,
+    ))
 }
 
 /// Compile speed, with `!` on a node markedly slower than the cluster median.
 fn speed_cell<'a>(node: &Node, median: Option<f64>, cluster: &Cluster) -> Line<'a> {
     // Zero means "has not compiled yet", which is not the same as slow.
     let Some(speed) = node.speed() else {
-        return dim(format!("{UNKNOWN:>5}"));
+        return dim(format!("{UNKNOWN:>width$}", width = SPEED_WIDTH as usize - 1));
     };
     let slow = cluster.is_slow_outlier(node);
     let _ = median;
     let mut spans = vec![Span::styled(
-        format!("{speed:>5.0}"),
+        format!("{speed:>width$.0}", width = SPEED_WIDTH as usize - 1),
         if slow {
             Style::default().fg(Color::LightRed)
         } else {
