@@ -34,7 +34,7 @@ truncation point is survivable.
 
 | File | Recorded against | Contents |
 |---|---|---|
-| `lab-session.icwcap` | `icecc-scheduler` 1.4, protocol 43, one `iceccd`, isolated netname `ICECCTOP_LAB` on port 18765 | login replay, then two live stats updates captured while CPU load was applied and released |
+| `lab-session.icwcap` | `icecc-scheduler` 1.4, protocol 43, one `iceccd`, isolated netname `ICWLAB` on port 18765 | login replay, then two live stats updates captured while CPU load was applied and released |
 
 `lab-session.icwcap` is the fixture behind
 `crates/icecc-proto/tests/golden.rs`. It is small on purpose and shows the two
