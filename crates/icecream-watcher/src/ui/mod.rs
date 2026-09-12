@@ -331,7 +331,7 @@ fn slots_block(
 ) -> Vec<Line<'static>> {
     let pct = summary.slot_usage();
     let mut head = vec![
-        label("JOBS"),
+        label("Jobs"),
         band_value(format!("{}/{}", summary.used_slots, summary.total_slots)),
     ];
     match pct {
@@ -395,7 +395,7 @@ fn queue_block(
     };
 
     let head = vec![
-        label("QUEUE"),
+        label("Queue"),
         band_value(format!("{} wait", summary.pending_jobs)),
         Span::styled(format!("{} {}", trend.arrow(), trend.label()), trend_style),
     ];
@@ -424,7 +424,7 @@ fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>
     let peak = history.max().unwrap_or(1.0).max(1.0);
     let now = history.last().unwrap_or(0.0);
 
-    let head = vec![label("RATE"), band_value(format!("{now:.0}/s"))];
+    let head = vec![label("Rate"), band_value(format!("{now:.0}/s"))];
     let notes = vec![Span::styled(
         format!(
             "{:<7}peak {peak:.0}/s · {} done since connect",
@@ -446,9 +446,9 @@ fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>
 /// "How many compile slots are occupied?" and "is the cluster healthy?"
 fn slots_line(summary: &Summary, bar_width: usize) -> Line<'static> {
     let mut spans = vec![
-        // "JOBS", not "SLOTS": the figure is work running, and the slot count
+        // "Jobs", not "Slots": the figure is work running, and the slot count
         // is what it is running out of. The table's column says the same.
-        label("JOBS"),
+        label("Jobs"),
         band_value(format!("{}/{}", summary.used_slots, summary.total_slots)),
     ];
 
@@ -512,7 +512,7 @@ fn queue_line(cluster: &Cluster, summary: &Summary, bar_width: usize) -> Line<'s
     };
 
     vec![
-        label("QUEUE"),
+        label("Queue"),
         band_value(format!("{} wait", summary.pending_jobs)),
         Span::styled(
             widgets::sparkline(&window, peak),
@@ -549,7 +549,7 @@ fn rate_line(cluster: &Cluster, bar_width: usize) -> Line<'static> {
     let now = history.last().unwrap_or(0.0);
 
     vec![
-        label("RATE"),
+        label("Rate"),
         band_value(format!("{now:.0}/s")),
         Span::styled(
             widgets::sparkline(&window, peak),
@@ -601,7 +601,7 @@ struct Columns {
     /// Slots in use and slots configured, as plain numbers.
     cur_max: bool,
     slot_bar: usize,
-    /// `RECEIVE` / `SEND`: work compiled here for the cluster, and work
+    /// `Receive` / `Send`: work compiled here for the cluster, and work
     /// submitted from here.
     jobs: bool,
     load: bool,
@@ -701,7 +701,7 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
     cols
 }
 
-/// Width of the `MAX` and `ACTIVE` job-count columns.
+/// Width of the `Max` and `Active` job-count columns.
 const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 7;
 const LOAD_WIDTH: u16 = 5;
@@ -743,46 +743,46 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let stale_after = cluster.metrics_stale_after;
     let median_speed = cluster.median_speed();
 
-    let mut header = vec![Cell::from("NODE")];
+    let mut header = vec![Cell::from("Node")];
     if cols.cur_max {
         header.push(Cell::from(format!(
             "{:>width$}",
-            "MAX",
+            "Max",
             width = COUNT_WIDTH as usize
         )));
         header.push(Cell::from(format!(
             "{:>width$}",
-            "ACTIVE",
+            "Active",
             width = COUNT_WIDTH as usize
         )));
     }
-    header.push(Cell::from(format!("{:<width$}", "JOBS", width = cols.slot_bar)));
+    header.push(Cell::from(format!("{:<width$}", "Jobs", width = cols.slot_bar)));
     if cols.jobs {
         header.push(Cell::from(format!(
             "{:>width$}",
-            "RECEIVE",
+            "Receive",
             width = JOBS_WIDTH as usize
         )));
         header.push(Cell::from(format!(
             "{:>width$}",
-            "SEND",
+            "Send",
             width = JOBS_WIDTH as usize
         )));
     }
     if cols.load {
-        header.push(Cell::from("LOAD"));
+        header.push(Cell::from("Load"));
     }
     if cols.speed {
-        header.push(Cell::from("SPEED"));
+        header.push(Cell::from("Speed"));
     }
     if cols.graph > 0 {
-        // "HISTORY" because the column is a record over time, not another
+        // "Jobs history" because the column is a record over time, not another
         // reading of now — the figures to its left already give that. The
         // window it covers is in the help overlay rather than the heading.
         header.push(Cell::from(if cols.graph >= GRAPH_LONG_HEADER {
-            "JOBS HISTORY"
+            "Jobs history"
         } else {
-            "JOBS"
+            "Jobs"
         }));
     }
 
@@ -812,15 +812,22 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         constraints.push(Constraint::Length(cols.graph as u16));
     }
 
-    let title = if cluster.nodes.is_empty() {
+    // Named in the same voice as the band above it, so the screen reads as two
+    // titled areas rather than one title and one caption. What follows the name
+    // is the count, or the reason there is nothing to count.
+    let detail = if cluster.nodes.is_empty() {
         if cluster.is_connected() {
-            " no nodes registered with this scheduler ".to_owned()
+            "  none registered with this scheduler ".to_owned()
         } else {
-            " waiting for a scheduler ".to_owned()
+            "  waiting for a scheduler ".to_owned()
         }
     } else {
-        format!(" {} nodes ", cluster.nodes.len())
+        format!("  {} ", cluster.nodes.len())
     };
+    let title = Line::from(vec![
+        Span::styled(" NODES", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(detail, Style::default().add_modifier(Modifier::DIM)),
+    ]);
 
     let table = Table::new(rows, constraints)
         .header(
@@ -1172,15 +1179,15 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             "reading the screen",
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("  MAX / ACTIVE compile slots configured, and how many are busy now"),
-        Line::from("  JOBS         one cell per slot, coloured by the node's CPU use"),
+        Line::from("  Max / Active compile slots configured, and how many are busy now"),
+        Line::from("  Jobs         one cell per slot, coloured by the node's CPU use"),
         Line::from("               green → yellow → red; grey means no agent to ask"),
-        Line::from("  JOBS HISTORY the last two minutes of that node's slot occupancy,"),
+        Line::from("  Jobs history the last two minutes of that node's slot occupancy,"),
         Line::from("               sampled once a second; the axis is 2 min at any width"),
-        Line::from("  RECEIVE      jobs compiled here for the cluster, since connect"),
-        Line::from("  SEND         jobs submitted from here; blank means a pure server"),
-        Line::from("  SPEED        output bytes per user-second; — until a node compiles"),
-        Line::from("  LOAD         the scheduler's placement weight, not CPU utilisation"),
+        Line::from("  Receive      jobs compiled here for the cluster, since connect"),
+        Line::from("  Send         jobs submitted from here; blank means a pure server"),
+        Line::from("  Speed        output bytes per user-second; — until a node compiles"),
+        Line::from("  Load         the scheduler's placement weight, not CPU utilisation"),
         Line::from("  —            not measured, or not reported by this node"),
         Line::from("  blank count  none, which is different from — : the answer is known"),
         Line::from("  !            what is limiting this node, or a slow outlier"),
@@ -1317,7 +1324,7 @@ mod tests {
             .unwrap_or_else(|| panic!("no {needle} line in:\n{out}"));
         let mut block = vec![lines[at]];
         for line in lines.iter().skip(at + 1) {
-            if ["JOBS", "QUEUE", "RATE"].iter().any(|l| line.contains(l)) || line.contains('└') {
+            if ["Jobs", "Queue", "Rate"].iter().any(|l| line.contains(l)) || line.contains('└') {
                 break;
             }
             block.push(line);
@@ -1479,13 +1486,13 @@ mod tests {
     fn the_cluster_band_answers_the_whole_cluster_questions() {
         let out = render(&busy_cluster(), 130, 24);
         assert!(out.contains("CLUSTER"), "{out}");
-        assert!(out.contains("JOBS"), "{out}");
-        assert!(out.contains("QUEUE"), "{out}");
-        assert!(out.contains("RATE"), "{out}");
+        assert!(out.contains("Jobs"), "{out}");
+        assert!(out.contains("Queue"), "{out}");
+        assert!(out.contains("Rate"), "{out}");
         // Occupancy as a figure, and as two minutes of shape beside it.
         assert!(out.contains("2/24"), "{out}");
         assert!(
-            series_lines(&out, "JOBS").iter().any(|l| l.chars().any(is_braille)),
+            series_lines(&out, "Jobs").iter().any(|l| l.chars().any(is_braille)),
             "expected a graph beside the figures: {out}"
         );
         assert!(out.contains("3 online"), "{out}");
@@ -1595,17 +1602,17 @@ mod tests {
         let header_of = |w: u16| {
             render(&app, w, 24)
                 .lines()
-                .find(|l| l.contains("NODE"))
+                .find(|l| l.contains("Node"))
                 .expect("header")
                 .to_owned()
         };
         let wide = header_of(150);
-        assert!(wide.contains("JOBS HISTORY"), "{wide}");
+        assert!(wide.contains("Jobs history"), "{wide}");
 
         // Narrow enough that the long form would be cut: the heading falls back
         // rather than showing half a word.
         let narrow = header_of(34);
-        assert!(!narrow.contains("HISTOR"), "no half a word: {narrow}");
+        assert!(!narrow.contains("histor"), "no half a word: {narrow}");
     }
 
     #[test]
@@ -1742,13 +1749,13 @@ mod tests {
     #[test]
     fn max_and_active_are_plain_numbers_beside_the_meter() {
         let out = render(&busy_cluster(), 130, 24);
-        let header = out.lines().find(|l| l.contains("NODE")).unwrap();
-        let max = header.find("MAX").expect("MAX column");
-        let active = header.find("ACTIVE").expect("ACTIVE column");
-        let jobs = header.find("JOBS").expect("JOBS column");
+        let header = out.lines().find(|l| l.contains("Node")).unwrap();
+        let max = header.find("Max").expect("MAX column");
+        let active = header.find("Active").expect("ACTIVE column");
+        let jobs = header.find("Jobs").expect("JOBS column");
         assert!(
             max < active && active < jobs,
-            "order should read MAX ACTIVE JOBS: {header}"
+            "order should read Max Active Jobs: {header}"
         );
     }
 
@@ -1812,9 +1819,9 @@ mod tests {
         let out = render(&busy_cluster(), 130, 24);
         let header = out
             .lines()
-            .find(|l| l.contains("NODE"))
+            .find(|l| l.contains("Node"))
             .expect("header row");
-        for icecream in ["MAX", "ACTIVE", "JOBS", "RECEIVE", "SEND", "LOAD", "SPEED"] {
+        for icecream in ["Max", "Active", "Jobs", "Receive", "Send", "Load", "Speed"] {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
@@ -1825,7 +1832,7 @@ mod tests {
     #[test]
     fn a_node_history_graph_appears_when_there_is_room() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(out.contains("JOBS HISTORY"), "{out}");
+        assert!(out.contains("Jobs history"), "{out}");
 
         // A working node has drawn dots; an idle one has a measured zero, not a
         // blank — and both differ from a node that is not drawn at all.
@@ -1882,7 +1889,7 @@ mod tests {
         let out = render(&app, 130, 24);
         assert!(!out.contains("build03"), "the row should be gone:\n{out}");
         assert!(out.contains("1 left"), "{out}");
-        assert!(out.contains("2 nodes"), "{out}");
+        assert!(out.contains("NODES  2"), "{out}");
     }
 
     #[test]
@@ -1899,7 +1906,7 @@ mod tests {
             1,
             "exactly one row, not two:\n{out}"
         );
-        assert!(out.contains("3 nodes"), "{out}");
+        assert!(out.contains("NODES  3"), "{out}");
     }
 
     #[test]
@@ -1958,9 +1965,9 @@ mod tests {
         // And the name column follows the longest name rather than a constant.
         let name_col = |out: &str| {
             out.lines()
-                .find(|l| l.contains("NODE"))
+                .find(|l| l.contains("Node"))
                 .unwrap()
-                .find("MAX")
+                .find("Max")
                 .unwrap()
         };
         assert!(
@@ -1990,28 +1997,28 @@ mod tests {
         let header_of = |w: u16| -> String {
             render(&app, w, 24)
                 .lines()
-                .find(|l| l.contains("NODE"))
+                .find(|l| l.contains("Node"))
                 .expect("header row")
                 .to_owned()
         };
 
         let wide = header_of(130);
-        assert!(wide.contains("SEND") && wide.contains("SPEED"), "{wide}");
+        assert!(wide.contains("Send") && wide.contains("Speed"), "{wide}");
 
         // Job counters go first: they are a tally, and a tally is the easiest
         // thing to read one column to the right in the detail view.
         let medium = header_of(80);
-        assert!(!medium.contains("SEND"), "{medium}");
-        assert!(medium.contains("SPEED"), "{medium}");
+        assert!(!medium.contains("Send"), "{medium}");
+        assert!(medium.contains("Speed"), "{medium}");
 
         let narrow = header_of(65);
-        assert!(!narrow.contains("SPEED"), "{narrow}");
-        assert!(narrow.contains("LOAD"), "{narrow}");
+        assert!(!narrow.contains("Speed"), "{narrow}");
+        assert!(narrow.contains("Load"), "{narrow}");
 
         let tiny = header_of(50);
-        assert!(!tiny.contains("LOAD"), "{tiny}");
+        assert!(!tiny.contains("Load"), "{tiny}");
         // Slots survive every width, because they are the point.
-        assert!(tiny.contains("JOBS"), "{tiny}");
+        assert!(tiny.contains("Jobs"), "{tiny}");
         assert!(
             render(&app, 50, 24).chars().any(is_braille),
             "the bar must survive"
@@ -2068,7 +2075,7 @@ mod tests {
         app.tick_history();
 
         let out = render(&app, 130, 30);
-        assert!(out.contains("120 nodes"), "{out}");
+        assert!(out.contains("NODES  120"), "{out}");
 
         // Selecting the last row must bring it into view.
         app.move_selection(-1);
@@ -2196,14 +2203,14 @@ mod tests {
         // each other, which a stagger of even three columns defeats.
         for height in [20u16, 26, 44] {
             let out = render(&app, 130, height);
-            let slots = graph_span(&out, "JOBS");
+            let slots = graph_span(&out, "Jobs");
             assert_eq!(
-                graph_span(&out, "QUEUE"),
+                graph_span(&out, "Queue"),
                 slots,
                 "QUEUE is staggered at height {height}:\n{out}"
             );
             assert_eq!(
-                graph_span(&out, "RATE"),
+                graph_span(&out, "Rate"),
                 slots,
                 "RATE is staggered at height {height}:\n{out}"
             );
@@ -2221,7 +2228,7 @@ mod tests {
         // worse than the eight a block gives.
         let band_line = |out: &str| -> String {
             out.lines()
-                .find(|l| l.contains("QUEUE"))
+                .find(|l| l.contains("Queue"))
                 .expect("band")
                 .to_owned()
         };
@@ -2259,7 +2266,7 @@ mod tests {
         // counting those would pass for the wrong reason.
         let rows_of = |h: u16| {
             let out = render(&app, 130, h);
-            ["JOBS", "QUEUE", "RATE"]
+            ["Jobs", "Queue", "Rate"]
                 .iter()
                 .map(|s| series_lines(&out, s).len())
                 .sum::<usize>()
@@ -2282,11 +2289,11 @@ mod tests {
 
         // Compact layout: one block glyph, at the right-hand end.
         let out = render(&app, 130, 20);
-        let queue = out.lines().find(|l| l.contains("QUEUE")).unwrap();
+        let queue = out.lines().find(|l| l.contains("Queue")).unwrap();
         let first = queue.find('▁').expect("one sample should be drawn");
         // The band's JOBS line, which comes before the table's column of the
         // same name.
-        let slots = out.lines().find(|l| l.contains("JOBS")).unwrap();
+        let slots = out.lines().find(|l| l.contains("Jobs")).unwrap();
         let bar = slots.find('░').expect("occupancy bar");
         assert!(
             first > bar,
@@ -2297,8 +2304,8 @@ mod tests {
         // sample out of two minutes earns a sliver at the right rather than
         // being stretched across the box as history that does not exist.
         let out = render(&app, 130, 30);
-        let (start, end) = graph_span(&out, "QUEUE");
-        let drawn = drawn_span(&out, "QUEUE").expect("one sample should be drawn");
+        let (start, end) = graph_span(&out, "Queue");
+        let drawn = drawn_span(&out, "Queue").expect("one sample should be drawn");
         let three_quarters = start + (end - start) * 3 / 4;
         assert!(
             drawn.0 >= three_quarters,
