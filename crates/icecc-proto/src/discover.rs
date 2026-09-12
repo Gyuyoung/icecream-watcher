@@ -27,6 +27,19 @@ pub struct SchedulerTarget {
     pub port: u16,
 }
 
+impl SchedulerTarget {
+    /// Whether this address only means "this machine".
+    ///
+    /// A scheduler on the same box answers a broadcast twice, once over
+    /// loopback and once over the LAN interface. Both reach it; only one of
+    /// them names it in a way anyone else could use.
+    pub fn is_loopback(&self) -> bool {
+        self.host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+    }
+}
+
 impl std::fmt::Display for SchedulerTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.host, self.port)
@@ -155,8 +168,15 @@ pub async fn broadcast(
         let better = match &best {
             None => true,
             Some(b) => {
+                let same_scheduler =
+                    answer.protocol == b.protocol && answer.start_time == b.start_time;
                 answer.protocol > b.protocol
                     || (answer.protocol == b.protocol && answer.start_time < b.start_time)
+                    // The same scheduler reached over a second interface. Take
+                    // the address that is not loopback: both connect, but only
+                    // one says *which machine* is scheduling, which is what the
+                    // header is asked for.
+                    || (same_scheduler && b.target.is_loopback() && !answer.target.is_loopback())
             }
         };
         if better {
@@ -377,6 +397,27 @@ mod tests {
     }
 
     /// Build a reply the way `prepareBroadcastReply` does for protocol >= 38.
+    #[test]
+    fn loopback_only_names_this_machine() {
+        let local = SchedulerTarget {
+            host: "127.0.0.1".into(),
+            port: 8765,
+        };
+        let lan = SchedulerTarget {
+            host: "192.168.0.30".into(),
+            port: 8765,
+        };
+        assert!(local.is_loopback());
+        assert!(!lan.is_loopback());
+        // A named host is not loopback as far as this is concerned: it is a
+        // name somebody typed, and it stays on the screen as they typed it.
+        assert!(!SchedulerTarget {
+            host: "build-master".into(),
+            port: 8765,
+        }
+        .is_loopback());
+    }
+
     fn modern_reply(netname: &str, protocol: u32, start: u64) -> Vec<u8> {
         let mut buf = vec![0u8; BROAD_BUFLEN];
         buf[0] = (PROTOCOL_VERSION as u8).wrapping_add(3);

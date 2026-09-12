@@ -49,6 +49,10 @@ pub enum Update {
     Connected {
         target: SchedulerTarget,
         protocol: u32,
+        /// The netname the scheduler answered discovery with. `None` when the
+        /// scheduler was named outright, or when replaying: nothing on the wire
+        /// after login says which network this is.
+        netname: Option<String>,
     },
     /// A decoded monitor event.
     Event(Event),
@@ -232,6 +236,7 @@ async fn connect_once(
     tx: &mpsc::Sender<Update>,
     established: &mut bool,
 ) -> io::Result<()> {
+    let mut found_netname: Option<String> = None;
     let target = match discovery {
         Discovery::Explicit(t) => {
             let _ = tx
@@ -248,7 +253,12 @@ async fn connect_once(
                 })
                 .await;
             match discover::broadcast(netname, *port, opts.discover_timeout).await? {
-                Some(a) => a.target,
+                Some(a) => {
+                    // The scheduler's own spelling of it, not the one we asked
+                    // for: the match is case-insensitive.
+                    found_netname = Some(a.netname.clone());
+                    a.target
+                }
                 None => {
                     return Err(io::Error::new(
                         io::ErrorKind::NotFound,
@@ -307,6 +317,7 @@ async fn connect_once(
         .send(Update::Connected {
             target: target.clone(),
             protocol,
+            netname: found_netname.clone(),
         })
         .await;
 
@@ -421,6 +432,7 @@ async fn run_replay(path: &Path, realtime: bool, tx: &mpsc::Sender<Update>) -> i
                 port: 0,
             },
             protocol,
+            netname: None,
         })
         .await;
 

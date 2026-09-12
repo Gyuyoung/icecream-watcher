@@ -329,6 +329,9 @@ pub enum ConnectionState {
     Connected {
         target: SchedulerTarget,
         protocol: u32,
+        /// The network this scheduler answered for, when it was found by
+        /// broadcast. `None` when it was named outright or is being replayed.
+        netname: Option<String>,
         since: Instant,
     },
     Disconnected {
@@ -616,7 +619,11 @@ impl Cluster {
             Update::Connecting { what } => {
                 self.connection = ConnectionState::Connecting { what };
             }
-            Update::Connected { target, protocol } => {
+            Update::Connected {
+                target,
+                protocol,
+                netname,
+            } => {
                 self.reset();
                 // Recorded before the move so the *first* scheduler of the
                 // session stays the reference point.
@@ -626,6 +633,7 @@ impl Cluster {
                 self.connection = ConnectionState::Connected {
                     target,
                     protocol,
+                    netname,
                     since: Instant::now(),
                 };
             }
@@ -939,6 +947,7 @@ mod tests {
                 port: 8765,
             },
             protocol: 43,
+            netname: Some("ICECREAM".into()),
         }
     }
 
@@ -1200,6 +1209,7 @@ mod tests {
                 port: 8765,
             },
             protocol: 43,
+            netname: Some("ICECREAM".into()),
         });
         let moved = c.moved_from().expect("a move must be visible");
         assert_eq!(moved.host, "sched");
@@ -1215,6 +1225,7 @@ mod tests {
                 port: 8765,
             },
             protocol: 43,
+            netname: Some("ICECREAM".into()),
         });
         c.apply(connected());
         assert_eq!(c.moved_from(), None, "back where it started is not a move");

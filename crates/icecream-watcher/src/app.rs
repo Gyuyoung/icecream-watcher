@@ -386,6 +386,7 @@ mod tests {
                 port: 8765,
             },
             protocol: 43,
+            netname: Some("ICECREAM".into()),
         }
     }
 

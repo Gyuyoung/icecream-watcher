@@ -136,9 +136,24 @@ fn header_line(app: &App, summary: &Summary) -> Line<'static> {
         ConnectionState::Connected {
             target,
             protocol,
+            netname,
             since,
         } => {
+            // Labelled, because an address and a port on their own are a
+            // riddle: the first question anyone asks of the top line is which
+            // scheduler this is, and the second is which network it speaks for.
+            spans.push(Span::styled(
+                "Scheduler: ",
+                Style::default().add_modifier(Modifier::DIM),
+            ));
             spans.push(Span::raw(format!("{target}")));
+            if let Some(netname) = netname {
+                spans.push(Span::styled(
+                    "  NetName: ",
+                    Style::default().add_modifier(Modifier::DIM),
+                ));
+                spans.push(Span::raw(netname.clone()));
+            }
             spans.push(Span::styled(
                 format!(
                     "  proto {protocol}  up {}",
@@ -1353,6 +1368,7 @@ mod tests {
                 port: 8765,
             },
             protocol: 43,
+            netname: Some("ICECREAM".into()),
         }
     }
 
@@ -2402,6 +2418,7 @@ mod tests {
                 port: 8765,
             },
             protocol: 43,
+            netname: Some("ICECREAM".into()),
         });
         let out = render(&app, 160, 24);
         assert!(out.contains("moved from"), "{out}");
