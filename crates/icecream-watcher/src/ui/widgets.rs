@@ -119,6 +119,78 @@ pub fn duration(secs: u64) -> String {
 /// one step apart in the cube, and the same colour to anyone glancing at a row.
 const NODE_COLOURS: [u8; 12] = [27, 38, 42, 67, 87, 93, 118, 127, 141, 151, 201, 225];
 
+/// Green-to-red stops for the load ramp, as 24-bit RGB.
+///
+/// Green through yellow-green, amber and orange to red — the convention for
+/// "fine, getting busy, at the limit". Every channel is monotonic along the
+/// path (red never falls, green never rises), so the ramp cannot appear to cool
+/// as the figure it stands for climbs; a gradient that doubles back reads as
+/// noise however pretty the individual colours are.
+const HEAT_STOPS: [(u8, u8, u8); 5] = [
+    (48, 214, 64),
+    (154, 214, 48),
+    (255, 214, 48),
+    (255, 140, 48),
+    (255, 48, 48),
+];
+
+/// The ramp as true 24-bit colour. `0.0` is green, `1.0` is red.
+fn heat_rgb(fraction: f32) -> (u8, u8, u8) {
+    let f = if fraction.is_finite() {
+        fraction.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let last = HEAT_STOPS.len() - 1;
+    let pos = f * last as f32;
+    let lower = (pos.floor() as usize).min(last);
+    let upper = (lower + 1).min(last);
+    let t = pos - lower as f32;
+
+    let mix = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
+    let (ar, ag, ab) = HEAT_STOPS[lower];
+    let (br, bg, bb) = HEAT_STOPS[upper];
+    (mix(ar, br), mix(ag, bg), mix(ab, bb))
+}
+
+static TRUECOLOR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Force the ramp onto the 216-colour cube, for a terminal that cannot do
+/// better.
+///
+/// On by default rather than sniffed, because `COLORTERM` is absent far more
+/// often than 24-bit colour is: it goes missing over `ssh`, under `sudo`, and
+/// in anything that sanitises the environment, and the cost of guessing wrong
+/// in that direction is a gradient nobody can see. A terminal that really
+/// cannot show RGB approximates it, so the cost of guessing wrong the other way
+/// is smaller — and `--colors 256` settles it either way.
+pub fn set_truecolor(enabled: bool) {
+    TRUECOLOR.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether to emit 24-bit colour. Without it the ramp rounds to the 6×6×6 cube,
+/// where each channel has six levels and a green-to-red sweep collapses to about
+/// a dozen distinguishable steps — enough to read, not enough to look gradual.
+fn truecolor() -> bool {
+    TRUECOLOR.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Nearest 6×6×6 cube colour, for terminals that cannot do better.
+fn nearest_cube(r: u8, g: u8, b: u8) -> Color {
+    let level = |v: u8| (f32::from(v) / 255.0 * 5.0).round() as u16;
+    Color::Indexed((16 + 36 * level(r) + 6 * level(g) + level(b)) as u8)
+}
+
+/// A colour from the green-to-red ramp. `0.0` is green, `1.0` is red.
+pub fn heat(fraction: f32) -> Color {
+    let (r, g, b) = heat_rgb(fraction);
+    if truecolor() {
+        Color::Rgb(r, g, b)
+    } else {
+        nearest_cube(r, g, b)
+    }
+}
+
 /// A stable colour for a node, derived from its name.
 ///
 /// Keyed by name rather than by row so a node keeps its colour when the list is
@@ -160,6 +232,48 @@ mod tests {
 
     fn count(s: &str, c: char) -> usize {
         s.chars().filter(|&x| x == c).count()
+    }
+
+    #[test]
+    fn the_heat_ramp_runs_green_to_red() {
+        assert_eq!(heat_rgb(0.0), HEAT_STOPS[0], "0 should be green");
+        assert_eq!(heat_rgb(1.0), *HEAT_STOPS.last().unwrap(), "1 should be red");
+
+        // Monotonic in both channels: a gradient that doubles back reads as
+        // noise, however pretty its individual colours are.
+        let (mut red, mut green) = (0u8, 255u8);
+        for step in 0..=200 {
+            let (r, g, _) = heat_rgb(step as f32 / 200.0);
+            assert!(r >= red, "red fell at {step}");
+            assert!(g <= green, "green rose at {step}");
+            red = r;
+            green = g;
+        }
+    }
+
+    #[test]
+    fn the_heat_ramp_is_actually_gradual() {
+        // The point of true colour here: 100 steps should not collapse into a
+        // handful of shades the way the 216-colour cube does.
+        let shades: std::collections::BTreeSet<(u8, u8, u8)> =
+            (0..=100).map(|i| heat_rgb(i as f32 / 100.0)).collect();
+        assert!(shades.len() > 80, "only {} distinct shades", shades.len());
+
+        // And the fallback still spans the ramp rather than flattening it.
+        let cube: std::collections::BTreeSet<String> = (0..=100)
+            .map(|i| {
+                let (r, g, b) = heat_rgb(i as f32 / 100.0);
+                format!("{:?}", nearest_cube(r, g, b))
+            })
+            .collect();
+        assert!(cube.len() >= 8, "fallback collapsed to {} shades", cube.len());
+    }
+
+    #[test]
+    fn the_heat_ramp_cannot_be_broken_by_a_bad_fraction() {
+        assert_eq!(heat(-1.0), heat(0.0));
+        assert_eq!(heat(5.0), heat(1.0));
+        assert_eq!(heat(f32::NAN), heat(0.0));
     }
 
     #[test]

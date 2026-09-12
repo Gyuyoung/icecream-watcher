@@ -27,11 +27,11 @@
 
 mod detail;
 mod graph;
-mod widgets;
+pub mod widgets;
 
 use std::time::{Duration, Instant};
 
-use icecc_model::{Bottleneck, Cluster, ConnectionState, Node, ResourceState, Summary, Trend};
+use icecc_model::{Cluster, ConnectionState, Node, ResourceState, Summary, Trend};
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -843,7 +843,7 @@ fn node_row<'a>(
         cells.push(Cell::from(count_cell(u64::from(node.max_jobs()), w)));
         cells.push(Cell::from(count_cell(u64::from(node.current_jobs()), w)));
     }
-    cells.push(Cell::from(slots_cell(node, cluster, cols.slot_bar)));
+    cells.push(Cell::from(slots_cell(node, cols.slot_bar)));
 
     if cols.jobs {
         let w = JOBS_WIDTH as usize;
@@ -910,17 +910,6 @@ fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
         Some(("host?".to_owned(), Color::LightRed))
     } else if node.suspect() {
         Some(("no ack".to_owned(), Color::Yellow))
-    } else if let Some(b) = node.bottleneck() {
-        // The table no longer carries CPU and memory columns — they are not
-        // Icecream figures — but "why is this node not taking more work" is,
-        // and it is one of the questions this screen exists to answer. The
-        // conclusion stays; the raw gauges live in the detail view.
-        match b {
-            Bottleneck::Memory => Some(("mem!".to_owned(), Color::LightRed)),
-            Bottleneck::Cpu => Some(("cpu!".to_owned(), Color::LightRed)),
-            // A full slot count is already obvious from the bar beside it.
-            Bottleneck::Slots => None,
-        }
     } else if stale {
         Some(("stale".to_owned(), Color::Yellow))
     } else if !node.accepts_remote() {
@@ -976,12 +965,16 @@ pub(crate) fn elide(text: &str, max: usize) -> String {
 ///
 /// An occupied slot is drawn as a filled left dot-column with the baseline
 /// carrying on to its right — a bar with a built-in gap — so a run of busy slots
-/// stays countable instead of merging into one block. Each is coloured by the
-/// node that *submitted* the job, the way `icecream-sundae` attributes work, so
-/// a glance says "eight of these are build02's". Jobs already running when the
-/// monitor attached have no known submitter and take the compiling node's own
-/// colour.
-fn slots_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
+/// stays countable instead of merging into one block.
+///
+/// Colour carries the node's **CPU utilisation** on a green-to-red ramp, so how
+/// hard the machine behind the meter is actually working is legible without
+/// reading a figure or decoding a badge — which is what the old `cpu!` marker
+/// did, at one threshold instead of a scale. It needs an agent on the node; with
+/// no reading the slots are drawn neutral rather than green, because "not
+/// measured" must not look like "idle". Which node *submitted* each job is in
+/// the detail view's job list: a cell cannot carry two meanings.
+fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     if width == 0 {
         return Line::raw("");
     }
@@ -1001,22 +994,19 @@ fn slots_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
         let pct = node.slot_pct().unwrap_or(0.0);
         return Line::from(Span::styled(
             graph::bar(pct, width),
-            Style::default().fg(widgets::node_colour(node.name())),
+            Style::default().fg(load_colour(node)),
         ));
     }
 
-    let mut spans = Vec::with_capacity(width);
-    for job_id in node.active_jobs.iter().take(max) {
-        let client = cluster
-            .jobs
-            .get(job_id)
-            .and_then(|job| job.client_id)
-            .and_then(|id| cluster.nodes.get(&id))
-            .map(|n| n.name().to_owned());
-        let colour = widgets::node_colour(client.as_deref().unwrap_or(node.name()));
-        spans.push(Span::styled(SLOT_BUSY.to_string(), Style::default().fg(colour)));
+    let busy = node.active_jobs.len().min(max);
+    let mut spans = Vec::with_capacity(3);
+    if busy > 0 {
+        spans.push(Span::styled(
+            SLOT_BUSY.to_string().repeat(busy),
+            Style::default().fg(load_colour(node)),
+        ));
     }
-    let free = max.saturating_sub(node.active_jobs.len());
+    let free = max.saturating_sub(busy);
     if free > 0 {
         spans.push(Span::styled(
             SLOT_FREE.to_string().repeat(free),
@@ -1028,6 +1018,19 @@ fn slots_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
         spans.push(Span::raw(" ".repeat(width - max)));
     }
     Line::from(spans)
+}
+
+/// What the busy part of a node's meter is coloured by: how hard its CPU is
+/// working, green through yellow to red.
+///
+/// `None` from the agent is drawn neutral rather than at the green end of the
+/// ramp. A node nobody is measuring must not look like a node with nothing to
+/// do — the same rule the graphs follow for a gap.
+fn load_colour(node: &Node) -> Color {
+    match node.cpu_pct() {
+        Some(pct) => widgets::heat(pct / 100.0),
+        None => Color::Gray,
+    }
 }
 
 /// An occupied slot: the left dot-column filled, the baseline continuing right.
@@ -1151,7 +1154,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from("  MAX / ACTIVE compile slots configured, and how many are busy now"),
-        Line::from("  JOBS         one cell per slot, coloured by whoever submitted the job"),
+        Line::from("  JOBS         one cell per slot, coloured by the node's CPU use"),
+        Line::from("               green → yellow → red; grey means no agent to ask"),
         Line::from("  RECEIVE      jobs compiled here for the cluster, since connect"),
         Line::from("  SEND         jobs submitted from here; blank means a pure server"),
         Line::from("  SPEED        output bytes per user-second; — until a node compiles"),
@@ -1495,6 +1499,74 @@ mod tests {
         assert_eq!(counts_before_meter(row), ["8", "1"], "MAX and ACTIVE: {row}");
     }
 
+    /// Colours of the busy cells in a node's meter, read from the buffer.
+    fn meter_colours(app: &App, name: &str) -> Vec<Color> {
+        let mut ui = Ui::default();
+        let mut terminal = Terminal::new(TestBackend::new(130, 24)).unwrap();
+        terminal.draw(|f| draw(f, app, &mut ui)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let row = (0..buf.area.height)
+            .find(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, *y)].symbol().to_owned())
+                    .collect::<String>()
+                    .contains(name)
+            })
+            .unwrap_or_else(|| panic!("no row for {name}"));
+        (0..buf.area.width)
+            .filter(|x| buf[(*x, row)].symbol() == SLOT_BUSY.to_string())
+            .map(|x| buf[(x, row)].style().fg.unwrap_or(Color::Reset))
+            .collect()
+    }
+
+    /// One node, one running job, and a CPU reading to colour it by.
+    fn node_at_cpu(name: &str, id: u32, cpu: Option<f32>) -> App {
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(
+            id,
+            &format!("Name:{name}\nIP:10.0.0.{id}\nMaxJobs:8\nNoRemote:false\n"),
+        ));
+        if let Some(cpu) = cpu {
+            app.apply_resource(id, ResourceResult::Ok(snapshot(name, cpu, 100, None)));
+        }
+        app.apply(Update::Event(Event::JobBegin {
+            job_id: 500,
+            start_time: 0,
+            host_id: id,
+        }));
+        app
+    }
+
+    #[test]
+    fn the_meter_is_coloured_by_the_nodes_cpu_use() {
+        // What the old `cpu!` badge said at one threshold, as a scale.
+        let idle = meter_colours(&node_at_cpu("idle", 1, Some(5.0)), "idle");
+        let busy = meter_colours(&node_at_cpu("busy", 1, Some(95.0)), "busy");
+
+        assert_eq!(idle, vec![widgets::heat(0.05)]);
+        assert_eq!(busy, vec![widgets::heat(0.95)]);
+        assert_ne!(idle, busy, "the same colour at 5% and 95% says nothing");
+    }
+
+    #[test]
+    fn every_node_uses_the_same_scale() {
+        // Not a colour per node: two machines working equally hard must look
+        // equally hard-working, whoever they are.
+        let a = meter_colours(&node_at_cpu("alpha", 1, Some(70.0)), "alpha");
+        let b = meter_colours(&node_at_cpu("omega", 2, Some(70.0)), "omega");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn a_node_with_no_agent_is_not_drawn_as_idle() {
+        // Green would claim a measurement nobody took. The rule the graphs
+        // follow for a gap applies to colour too.
+        let unknown = meter_colours(&node_at_cpu("dark", 1, None), "dark");
+        assert_eq!(unknown, vec![Color::Gray]);
+        assert_ne!(unknown, vec![widgets::heat(0.0)]);
+    }
+
     #[test]
     fn every_slot_gets_its_own_cell_so_they_can_be_counted() {
         let mut app = App::new();
@@ -1510,61 +1582,6 @@ mod tests {
         let out = render(&app, 130, 24);
         let row = row_for(&out, "build01");
         assert_eq!(slot_meter(row), "⣇⣇⣇⣀⣀⣀⣀⣀", "{row}");
-    }
-
-    #[test]
-    fn a_busy_slot_is_coloured_by_whoever_submitted_the_job() {
-        // The bar answers "how full" and the figures answer it better; what a
-        // per-slot meter adds is *whose* work is running here.
-        let mut app = App::new();
-        app.apply(connected());
-        for id in 1..=3u32 {
-            app.apply(stats(
-                id,
-                &format!("Name:build{id:02}\nIP:10.0.0.{id}\nMaxJobs:8\nNoRemote:false\n"),
-            ));
-        }
-        // build01 compiles one job for build02 and one for build03.
-        for (job, client) in [(601u32, 2u32), (602, 3)] {
-            app.apply(Update::Event(Event::GetCs {
-                job_id: job,
-                client_id: client,
-                filename: "x.cpp".into(),
-                lang: 1,
-            }));
-            app.apply(Update::Event(Event::JobBegin {
-                job_id: job,
-                start_time: 0,
-                host_id: 1,
-            }));
-        }
-
-        let colours = row_colours(&app, 130, 30, "build01");
-        let busy: Vec<Color> = {
-            let mut ui = Ui::default();
-            let mut terminal = Terminal::new(TestBackend::new(130, 30)).unwrap();
-            terminal.draw(|f| draw(f, &app, &mut ui)).unwrap();
-            let buf = terminal.backend().buffer().clone();
-            let row = (0..buf.area.height)
-                .find(|y| {
-                    (0..buf.area.width)
-                        .map(|x| buf[(x, *y)].symbol().to_owned())
-                        .collect::<String>()
-                        .contains("build01")
-                })
-                .unwrap();
-            (0..buf.area.width)
-                .filter(|x| buf[(*x, row)].symbol() == SLOT_BUSY.to_string())
-                .map(|x| buf[(x, row)].style().fg.unwrap_or(Color::Reset))
-                .collect()
-        };
-        assert_eq!(busy.len(), 2, "{colours:?}");
-        assert_ne!(
-            busy[0], busy[1],
-            "two clients' jobs should not look like one client's"
-        );
-        assert_eq!(busy[0], widgets::node_colour("build02"));
-        assert_eq!(busy[1], widgets::node_colour("build03"));
     }
 
     #[test]
@@ -1737,23 +1754,6 @@ mod tests {
         for machine in ["CPU", "MEM", "TEMP"] {
             assert!(!header.contains(machine), "{machine} should be gone: {header}");
         }
-    }
-
-    #[test]
-    fn cpu_bound_and_memory_bound_nodes_are_distinguishable() {
-        // The gauges left the table with the rest of the machine metrics, but
-        // "why is this node not taking more work" is an Icecream question and
-        // one of the nine this screen exists to answer, so the conclusion stays
-        // as a badge even though the percentages behind it do not.
-        let out = render(&busy_cluster(), 130, 24);
-        assert!(row_for(&out, "build01").contains("cpu!"), "{out}");
-        assert!(row_for(&out, "build02").contains("mem!"), "{out}");
-    }
-
-    #[test]
-    fn an_unconstrained_node_carries_no_marker() {
-        let out = render(&busy_cluster(), 130, 24);
-        assert!(!row_for(&out, "build03").contains('!'));
     }
 
     #[test]

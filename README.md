@@ -21,8 +21,8 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ 7 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS 2min                      │
-│build01 cpu!                 16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀      15       8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02 mem!                 16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀      10         14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
+│build01                      16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀      15       8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
+│build02                      16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀      10         14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
 │build03                      16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀       8         14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
 │build04                      16      4 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       4       9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
 │build05                       8        ⣀⣀⣀⣀⣀⣀⣀⣀                         14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
@@ -56,9 +56,9 @@ sized to the cluster rather than to a fixed maximum — the meter gets one cell 
 slot on the largest node, and the name column follows the longest hostname — so
 nothing is padded out with cells that nothing fills.
 A machine's CPU, memory and temperature are its own business and appear nowhere
-but as the conclusion drawn from them: `build01` is badged `cpu!` and `build02`
-`mem!`, the answer to "why is this node not taking more work" without the gauges
-behind it. `build04` is a slow outlier
+as figures — but the `JOBS` meter is **coloured by the node's CPU use**, green
+through yellow to red, so how hard each machine is actually working is legible
+without reading a number. `build04` is a slow outlier
 and the `!` on its speed says so. `build07` has no agent, so only its
 load is unknown; everything else came from the scheduler.
 
@@ -75,12 +75,16 @@ beside them gives **one cell per slot**, so slots can be counted rather than
 estimated.
 A busy slot is a filled dot-column with the baseline carrying on to its right —
 a bar with a gap built in — so a run of them stays countable instead of merging
-into one block, and each is coloured by the node that *submitted* the job, the
-way `icecream-sundae` attributes work. A glance says "eight of these are
-`build02`'s". Jobs already running when the monitor attached have no known
-submitter and take the compiling node's own colour. A node with more slots than
-the column has cells falls back to a proportional bar, and the figures carry the
-count.
+into one block. Their colour is the node's CPU utilisation on a green-to-red
+ramp — the whole machine's load, not the meter's own fill — so a green meter at
+12/12 says "full, but coasting" and a red one says "full and struggling". A node
+with no agent to ask is drawn grey rather than green: not measured must not look
+like idle. A node with more slots than the column has cells falls back to a
+proportional bar, and the figures carry the count.
+
+The gradient is 24-bit colour by default so that it is actually gradual; pass
+`--colors-256` on a terminal that cannot show it and the ramp rounds to the
+216-colour cube instead.
 
 **Each node is drawn in its own colour**, keyed by hostname so it follows the
 machine through a re-sort, through other nodes coming and going, and between
@@ -134,9 +138,9 @@ Esc back  ↑↓/jk scroll  q quit   build02
 ```
 
 Below the fold the `NODE` section continues with free memory and the job counters
-since this monitor connected, and ends with a footnote naming the agent — the
-only thing it is still used for is the `cpu!` / `mem!` badges, so there has to be
-somewhere to see the figures behind them. Anything wrong with the node — no ack
+since this monitor connected, and ends with a footnote naming the agent — it is
+what colours the `JOBS` meters, so there has to be somewhere to see the figures
+behind the colour. Anything wrong with the node — no ack
 from the scheduler, an agent that answered with nonsense, a hostname that does
 not match — is stated at the top, before the numbers it would explain.
 
@@ -190,6 +194,7 @@ Other flags:
 | `--poll-timeout MS` | per-node deadline (default 750) |
 | `--stale-after MS` | when to call metrics stale (default 5000) |
 | `--no-agents` | scheduler data only; do not poll agents at all |
+| `--colors-256` | round the load gradient to the 216-colour cube |
 | `--job-timeout SECS` | forget a job whose completion never arrives (default 1800; 0 disables) |
 | `--reconnect-max-delay SECS` | ceiling on the reconnect backoff (default 30) |
 

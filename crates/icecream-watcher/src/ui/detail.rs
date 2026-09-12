@@ -355,8 +355,8 @@ fn free_memory(node: &Node) -> String {
 }
 
 /// A footnote, not a section: the agent no longer feeds this panel. It is what
-/// the `cpu!` and `mem!` badges on the overview are computed from, so there has
-/// to be somewhere to see the figures behind them.
+/// colours the overview's `JOBS` meters, so there has to be somewhere to see
+/// the figure behind the colour.
 fn agent_lines(node: &Node) -> Vec<Line<'static>> {
     let mut out = vec![heading("AGENT")];
 
@@ -365,7 +365,7 @@ fn agent_lines(node: &Node) -> Vec<Line<'static>> {
             out.push(field(
                 "reported",
                 format!(
-                    "{:.0}% CPU, {} memory in use — what the overview badges read",
+                    "{:.0}% CPU, {} memory in use — the CPU figure colours the meter",
                     res.cpu.total_busy_pct,
                     node.mem_pct()
                         .map(|p| format!("{p:.0}%"))

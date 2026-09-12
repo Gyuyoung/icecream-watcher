@@ -698,12 +698,12 @@ impl Cluster {
                     },
                 );
 
-                let node = self.node_mut(host_id);
-                node.active_jobs.insert(job_id);
-                node.jobs_in += 1;
-
-                if let Some(client_id) = client_id {
-                    self.node_mut(client_id).jobs_out += 1;
+                if let Some(node) = self.nodes.get_mut(&host_id) {
+                    node.active_jobs.insert(job_id);
+                    node.jobs_in += 1;
+                }
+                if let Some(node) = client_id.and_then(|id| self.nodes.get_mut(&id)) {
+                    node.jobs_out += 1;
                 }
             }
 
@@ -724,17 +724,18 @@ impl Cluster {
                         since: Instant::now(),
                     },
                 );
-                let node = self.node_mut(host_id);
-                node.local_jobs.insert(job_id);
-                node.jobs_local += 1;
+                if let Some(node) = self.nodes.get_mut(&host_id) {
+                    node.local_jobs.insert(job_id);
+                    node.jobs_local += 1;
+                }
             }
 
             Event::JobDone(done) => self.finish_remote(done),
 
             Event::LocalJobDone { job_id } => match self.jobs.remove(&job_id) {
                 Some(job) => {
-                    if let Some(host_id) = job.host_id {
-                        self.node_mut(host_id).local_jobs.remove(&job_id);
+                    if let Some(node) = job.host_id.and_then(|id| self.nodes.get_mut(&id)) {
+                        node.local_jobs.remove(&job_id);
                     }
                     self.totals.completed_local += 1;
                 }
@@ -780,8 +781,7 @@ impl Cluster {
     fn finish_remote(&mut self, done: JobDone) {
         match self.jobs.remove(&done.job_id) {
             Some(job) => {
-                if let Some(host_id) = job.host_id {
-                    let node = self.node_mut(host_id);
+                if let Some(node) = job.host_id.and_then(|id| self.nodes.get_mut(&id)) {
                     node.active_jobs.remove(&done.job_id);
                     node.local_jobs.remove(&done.job_id);
                 }
@@ -849,6 +849,15 @@ impl Cluster {
             .collect()
     }
 
+    /// The node a `MON_STATS` record belongs to, created if this is the first
+    /// we have heard of it.
+    ///
+    /// Only stats may introduce a node. Job events name host ids too, and
+    /// letting those create one conjures a row with no name, no address and no
+    /// slot count out of a `MON_JOB_DONE` that arrived after its node left —
+    /// which is exactly what happens now that a departing node is removed. The
+    /// scheduler announces a node with stats before it can appear in any job,
+    /// so nothing real is lost by ignoring the rest.
     fn node_mut(&mut self, host_id: u32) -> &mut Node {
         self.nodes
             .entry(host_id)
@@ -1070,6 +1079,38 @@ mod tests {
         let total_out: u64 = c.nodes.values().map(|n| n.jobs_out).sum();
         assert_eq!(total_in, 20);
         assert_eq!(total_in, total_out);
+    }
+
+    #[test]
+    fn a_job_event_never_conjures_a_node() {
+        // Job events name host ids, and a MON_JOB_DONE can arrive after its
+        // node has left. Creating a node from one produced a row with no name,
+        // no address and no slot count — a "?" sitting above the real cluster.
+        let mut c = cluster_with_two_nodes();
+        c.apply(get_cs(7, 1));
+        c.apply(job_begin(7, 1));
+        c.apply(stats(1, "State:Offline\n")); // the compiler leaves mid-job
+
+        // Its completion still arrives.
+        c.apply(Update::Event(Event::JobDone(JobDone {
+            job_id: 7,
+            ..Default::default()
+        })));
+
+        assert_eq!(c.nodes.len(), 1, "{:?}", c.nodes.keys().collect::<Vec<_>>());
+        assert!(
+            c.nodes.values().all(|n| n.name() != "?"),
+            "a nameless node was invented"
+        );
+    }
+
+    #[test]
+    fn a_job_for_an_unknown_host_is_ignored_rather_than_invented() {
+        let mut c = cluster_with_two_nodes();
+        c.apply(get_cs(7, 99)); // a client we have never been told about
+        c.apply(job_begin(7, 98)); // and a compiler we have never been told about
+        assert_eq!(c.nodes.len(), 2);
+        assert!(c.nodes.values().all(|n| n.name() != "?"));
     }
 
     // -------------------------------------------------- nodes leaving

@@ -97,6 +97,14 @@ struct Cli {
     #[arg(long, value_name = "SECS", default_value_t = 30)]
     reconnect_max_delay: u64,
 
+    /// Use the 216-colour cube instead of 24-bit colour.
+    ///
+    /// The load gradient is drawn in 24-bit colour by default. Pass this for a
+    /// terminal that cannot show it; the ramp then rounds to the cube, which
+    /// has six levels per channel and so about a dozen visible steps.
+    #[arg(long)]
+    colors_256: bool,
+
     /// Print events as text instead of drawing a TUI. Useful for checking a
     /// cluster over ssh, or in CI.
     #[arg(long)]
@@ -157,6 +165,7 @@ fn main() -> io::Result<()> {
             metrics_stale_after: Duration::from_millis(cli.stale_after),
             job_timeout: optional_secs(cli.job_timeout),
         };
+        ui::widgets::set_truecolor(!cli.colors_256);
         if cli.dump {
             run_dump(rx, collector, limits).await
         } else {

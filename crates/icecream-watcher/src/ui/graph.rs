@@ -114,8 +114,10 @@ pub fn row_colour(r: usize, rows: usize) -> Color {
     if rows == 0 {
         return Color::Green;
     }
-    let midpoint = ((rows - r) as f32 - 0.5) / rows as f32 * 100.0;
-    widgets::ramp(midpoint)
+    // The same ramp the node meters use, so a band row and a row in the table
+    // at the same height mean the same thing.
+    let midpoint = ((rows - r) as f32 - 0.5) / rows as f32;
+    widgets::heat(midpoint)
 }
 
 #[cfg(test)]
@@ -247,8 +249,8 @@ mod tests {
     #[test]
     fn colour_follows_height_not_the_curve() {
         let rows = 4;
-        assert_eq!(row_colour(0, rows), widgets::ramp(87.5));
-        assert_eq!(row_colour(rows - 1, rows), widgets::ramp(12.5));
+        assert_eq!(row_colour(0, rows), widgets::heat(0.875));
+        assert_eq!(row_colour(rows - 1, rows), widgets::heat(0.125));
         assert_eq!(row_colour(0, 0), Color::Green, "must not divide by zero");
     }
 }

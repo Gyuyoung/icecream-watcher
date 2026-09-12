@@ -1155,6 +1155,59 @@ nothing fills is space taken from every column after it.
 | columns fit the cluster | meter width asserted to equal the largest node's slot count at 4 and at 16; the name column asserted to start `MAX` earlier for short names |
 | a long name keeps its badge | a 27-character hostname renders with `local` and without an ellipsis |
 
+## 8l. Load as a gradient, and a node that never existed — **done**
+
+The `cpu!` badge answered "why is this node not taking more work", but it
+answered it at a single threshold and in a notation that has to be learned.
+Colour does the same job on a scale: the `JOBS` meter is drawn in the node's
+**CPU utilisation**, green through yellow to red, so 60 % and 95 % look
+different where a badge treated everything under 85 % as silent.
+
+Decisions worth recording:
+
+* **The colour is the machine's load, not the meter's own fill.** The fill is
+  already the meter's shape, and repeating it in colour would say nothing twice.
+  A green meter at 12/12 is a node that is full but coasting; a red one at 4/12
+  is a node struggling with four jobs.
+* **One scale for every node**, not a colour per node. Two machines working
+  equally hard have to look equally hard-working, whoever they are — which means
+  the meter gave up carrying *who submitted* each job. That attribution is in
+  the detail view's job list; one cell cannot carry two meanings.
+* **Not measured is not green.** A node with no agent is drawn grey. Green would
+  claim a reading nobody took — the rule the graphs already follow for a gap.
+* **24-bit colour by default, with `--colors-256` to opt out.** The 216-colour
+  cube has six levels per channel, so a green-to-red sweep collapses into about
+  a dozen visible steps: legible, but not a gradient. `COLORTERM` is *not*
+  sniffed — it goes missing over `ssh`, under `sudo`, and anywhere the
+  environment is sanitised, and a terminal that truly cannot show RGB
+  approximates it, so guessing wrong that way costs less than a gradient nobody
+  can see.
+* **The ramp is monotonic in every channel** — red never falls, green never
+  rises — and asserted to be. A gradient that doubles back reads as noise
+  however pretty its individual colours are.
+
+The band's graph rows use the same ramp, so a row in the band and a row in the
+table at the same height mean the same thing.
+
+### The `?` nodes
+
+Five nodes on screen, two of them named `?` with no address, no slot count and
+no figures. A regression from §8i: `node_mut` created a node for any host id it
+was given, including the ones that arrive in **job** events, so a
+`MON_JOB_DONE` landing after its node had left conjured a nameless row. Keeping
+offline rows had hidden it — the node was still in the map to be found.
+
+Only `MON_STATS` may introduce a node now. The scheduler announces a node with
+stats before it can appear in any job, so nothing real is lost.
+
+| Claim | Evidence |
+|---|---|
+| the meter reads the CPU | colours read back from the buffer at 5 % and 95 %, and asserted equal for two different nodes at the same load |
+| an unmeasured node is not green | asserted to be neither the ramp's green end nor any ramp colour |
+| the gradient is gradual | 101 steps produce more than 80 distinct shades in 24-bit, and still span the ramp when rounded to the cube |
+| the ramp never cools | every channel asserted monotonic across 200 steps |
+| a job event cannot invent a node | a completion arriving after its node left leaves one node, not two; jobs naming unknown hosts change nothing |
+
 ## 9. Open questions for Phase 2+
 
 - **Agent transport.** HTTP/JSON (trivially debuggable with `curl`, easy `node_exporter` parity) vs
