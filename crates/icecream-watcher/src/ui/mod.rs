@@ -333,28 +333,28 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Draw a rule across the band at row `y`, joined to its borders.
+/// Draw a rule across the band at row `y`, reaching its borders.
 ///
-/// Dotted, and darker than the border it joins: it divides the inside of one
+/// Dotted, and darker than the border it meets: it divides the inside of one
 /// area rather than marking where that area ends, so it should be findable
-/// without being read as a second frame. Only the two ends that touch the
-/// border are solid, because a join has to actually join.
+/// without being read as a second frame. Only the two end cells are solid, and
+/// they take the border's colour.
 fn separator(frame: &mut Frame, area: Rect, y: u16) {
     if area.width < 2 || y >= area.y + area.height {
         return;
     }
-    // The two ends belong to the frame, not to the rule: they are the border's
-    // own corners turned inward, so they are drawn in the border's colour and
-    // only the span between them is dimmed.
+    // Plain line segments at the ends rather than the tee joins `\u{251c}` and
+    // `\u{2524}`: they belong to the frame, so they take its colour, but they
+    // are not drawn as a fork in it. Only the span between them is dimmed.
     let cap = Style::default().fg(BORDER_COLOUR);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("\u{251c}", cap),
+            Span::styled("\u{2500}", cap),
             Span::styled(
                 "\u{2508}".repeat(area.width as usize - 2),
                 Style::default().fg(SEPARATOR_COLOUR),
             ),
-            Span::styled("\u{2524}", cap),
+            Span::styled("\u{2500}", cap),
         ])),
         Rect {
             x: area.x,
