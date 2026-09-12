@@ -243,6 +243,10 @@ fn series_rows(inner: usize) -> (usize, usize) {
 const SERIES_ROWS_TALL: usize = 2;
 /// Rows per series on a large terminal.
 const SERIES_ROWS_LARGE: usize = 3;
+/// The rule between two series. Darker than `DarkGray`, which at this length
+/// drew a line that competed with the band's own border.
+const SEPARATOR_COLOUR: Color = Color::Rgb(64, 64, 64);
+
 /// Rows spent dividing the three series. Two braille fields that touch read as
 /// one graph with a kink in it, so each series after the first gets a rule.
 const SEPARATOR_ROWS: usize = 2;
@@ -309,17 +313,19 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
 
 /// Draw a rule across the band at row `y`, joined to its borders.
 ///
-/// Dimmer than the border it joins: it divides the inside of one area rather
-/// than marking where that area ends.
+/// Dotted, and darker than the border it joins: it divides the inside of one
+/// area rather than marking where that area ends, so it should be findable
+/// without being read as a second frame. Only the two ends that touch the
+/// border are solid, because a join has to actually join.
 fn separator(frame: &mut Frame, area: Rect, y: u16) {
     if area.width < 2 || y >= area.y + area.height {
         return;
     }
-    let rule = format!("\u{251c}{}\u{2524}", "\u{2500}".repeat(area.width as usize - 2));
+    let rule = format!("\u{251c}{}\u{2524}", "\u{2508}".repeat(area.width as usize - 2));
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             rule,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(SEPARATOR_COLOUR),
         ))),
         Rect {
             x: area.x,
