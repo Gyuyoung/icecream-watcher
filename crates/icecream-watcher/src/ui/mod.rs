@@ -31,7 +31,9 @@ pub mod widgets;
 
 use std::time::{Duration, Instant};
 
-use icecc_model::{Cluster, ConnectionState, Node, ResourceState, Summary, Trend};
+use icecc_model::{
+    Cluster, ConnectionState, Job, JobState, Node, ResourceState, Summary, Trend,
+};
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -659,8 +661,8 @@ struct Columns {
     jobs: bool,
     load: bool,
     speed: bool,
-    /// Width of the trailing slot-occupancy graph, 0 to drop it.
-    graph: usize,
+    /// Width of the trailing column of filenames, 0 to drop it.
+    files: usize,
 }
 
 /// Which columns fit, and how wide the bar can be.
@@ -679,7 +681,7 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
             jobs: true,
             load: true,
             speed: true,
-            graph: 0,
+            files: 0,
         },
         w if w >= 92 => Columns {
             name: 22,
@@ -688,7 +690,7 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
             jobs: true,
             load: true,
             speed: true,
-            graph: 0,
+            files: 0,
         },
         w if w >= 76 => Columns {
             name: 20,
@@ -697,7 +699,7 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
             jobs: false,
             load: true,
             speed: true,
-            graph: 0,
+            files: 0,
         },
         w if w >= 60 => Columns {
             name: 16,
@@ -706,7 +708,7 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
             jobs: false,
             load: true,
             speed: false,
-            graph: 0,
+            files: 0,
         },
         _ => Columns {
             name: 12,
@@ -715,13 +717,13 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
             jobs: false,
             load: false,
             speed: false,
-            graph: 0,
+            files: 0,
         },
     };
 
     // The meter needs a cell per slot and not one more: sized to the breakpoint
     // alone, a cluster of 8-slot machines left half the column empty and pushed
-    // everything right of it away for nothing. The spare goes to the graph.
+    // everything right of it away for nothing. The spare goes to the filenames.
     cols.slot_bar = cols.slot_bar.min(widest_node.max(MIN_SLOT_BAR));
 
     let fixed = cols.name as usize
@@ -730,12 +732,12 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
         + if cols.jobs { (JOBS_WIDTH as usize + 1) * 2 } else { 0 }
         + if cols.load { LOAD_WIDTH as usize + 1 } else { 0 }
         + if cols.speed { SPEED_WIDTH as usize + 1 } else { 0 };
-    // Two for the borders, one for the column gap before the graph, and a
-    // little slack so the graph never collides with the right-hand border.
+    // Two for the borders, one for the column gap before the filenames, and a
+    // little slack so a name never collides with the right-hand border.
     let mut spare = (width as usize).saturating_sub(fixed + 6);
 
     // Names come first with space going spare — an elided hostname costs the
-    // reader more than a shorter graph does, and build hosts are often named at
+    // reader more than a shorter path does, and build hosts are often named at
     // length — but only as far as the longest name actually needs. Widening to
     // a fixed maximum left a column of empty cells on a cluster of short names
     // and pushed everything after it away for nothing.
@@ -748,8 +750,8 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
         spare -= widen;
     }
 
-    if spare >= MIN_GRAPH {
-        cols.graph = spare.min(MAX_GRAPH);
+    if spare >= MIN_FILES {
+        cols.files = spare.min(MAX_FILES);
     }
     cols
 }
@@ -762,16 +764,13 @@ const SPEED_WIDTH: u16 = 6;
 /// Never narrower than this, so the column keeps a recognisable shape even for
 /// a cluster of two-slot machines.
 const MIN_SLOT_BAR: usize = 4;
-/// Width at which the graph column can spell its heading out rather than
-/// abbreviate it. Below this the long form would be truncated, which reads
-/// worse than the short one.
-const GRAPH_LONG_HEADER: usize = 12;
-/// Below this a history graph shows too little time to be worth a column.
-const MIN_GRAPH: usize = 10;
-/// Beyond this the graph stops growing. Two dot columns per character means 60
-/// cells already draw the whole two-minute buffer one sample to a dot; wider is
-/// upscaling, and a table row is a strip rather than a chart.
-const MAX_GRAPH: usize = 60;
+/// Below this a filename is elided to the point of saying nothing, so the
+/// column is not worth its space.
+const MIN_FILES: usize = 14;
+/// Beyond this the column stops growing. Source paths are long, but a row is
+/// read left to right and the answer — which file — is at the end of the path,
+/// which eliding from the left already keeps.
+const MAX_FILES: usize = 64;
 /// How wide a hostname column may grow when there is space going spare.
 const NAME_MAX: usize = 38;
 /// Cells kept beside the longest name for its badge, so `no ack` or `cpu!` does
@@ -828,15 +827,8 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.speed {
         header.push(Cell::from("Speed"));
     }
-    if cols.graph > 0 {
-        // "Jobs history" because the column is a record over time, not another
-        // reading of now — the figures to its left already give that. The
-        // window it covers is in the help overlay rather than the heading.
-        header.push(Cell::from(if cols.graph >= GRAPH_LONG_HEADER {
-            "Jobs history"
-        } else {
-            "Jobs"
-        }));
+    if cols.files > 0 {
+        header.push(Cell::from("Files"));
     }
 
     let rows: Vec<Row> = app
@@ -861,8 +853,8 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.speed {
         constraints.push(Constraint::Length(SPEED_WIDTH));
     }
-    if cols.graph > 0 {
-        constraints.push(Constraint::Length(cols.graph as u16));
+    if cols.files > 0 {
+        constraints.push(Constraint::Length(cols.files as u16));
     }
 
     // Named in the same voice as the band above it, so the screen reads as two
@@ -927,8 +919,8 @@ fn node_row<'a>(
     if cols.speed {
         cells.push(Cell::from(speed_cell(node, median_speed, cluster)));
     }
-    if cols.graph > 0 {
-        cells.push(Cell::from(slots_graph_cell(node, cols.graph)));
+    if cols.files > 0 {
+        cells.push(Cell::from(files_cell(node, cluster, cols.files)));
     }
 
     let row_style = if !node.is_busy() {
@@ -957,20 +949,76 @@ fn count_cell<'a>(value: u64, width: usize) -> Line<'a> {
     Line::from(Span::raw(format!("{value:>width$}")))
 }
 
-/// Two minutes of this node's slot occupancy, in braille dots.
+/// What this node is compiling.
 ///
-/// One character row is four levels rather than the eight a block sparkline
-/// gives, but twice the horizontal resolution — so a row-height strip shows
-/// twice the time at half the vertical detail. For "has this node been busy, and
-/// is it busier now than a minute ago" that is the better trade; the exact
-/// figure is one column to the left.
-fn slots_graph_cell<'a>(node: &Node, width: usize) -> Line<'a> {
-    let samples = node.slots_history.stretched(width * graph::CELL_COLS);
-    let glyphs = graph::area(&samples, 100.0, width, 1);
-    Line::from(Span::styled(
-        glyphs.into_iter().next().unwrap_or_default(),
-        Style::default().fg(widgets::node_colour(node.name())),
-    ))
+/// One name rather than a list, because the row is a strip: the job that has
+/// been running longest is both the one worth naming — it is the answer to
+/// "what is taking so long" — and the one most likely to still be here on the
+/// next frame, so the column can be read instead of flickering. The others are
+/// counted, and the detail view names them.
+///
+/// Only work the cluster gave this node. A job it is compiling for itself
+/// occupies no scheduler slot and is not in the meter to the left either.
+fn files_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
+    let Some((job, others)) = longest_running(node, cluster) else {
+        // Blank, not `—`: nothing is compiling here, which is knowing the
+        // answer rather than lacking it.
+        return Line::raw(String::new());
+    };
+
+    let more = if others > 0 { format!(" +{others}") } else { String::new() };
+    let room = width.saturating_sub(more.chars().count());
+    let name = if job.filename.is_empty() {
+        // `MON_JOB_BEGIN` without the `MON_GET_CS` that carries the name: the
+        // job started before this monitor attached.
+        elide("(name not seen)", room)
+    } else {
+        path_tail(&job.filename, room)
+    };
+
+    let mut spans = vec![Span::raw(name)];
+    if !more.is_empty() {
+        spans.push(Span::styled(more, Style::default().add_modifier(Modifier::DIM)));
+    }
+    Line::from(spans)
+}
+
+/// This node's longest-running job, and how many others it has running.
+fn longest_running<'a>(node: &Node, cluster: &'a Cluster) -> Option<(&'a Job, usize)> {
+    let mut running = cluster
+        .jobs
+        .values()
+        .filter(|job| job.state == JobState::Active && job.host_id == Some(node.host_id));
+    let first = running.next()?;
+    // Oldest wins ties on id, so the choice cannot flicker between two jobs
+    // that began in the same instant.
+    let oldest = running.clone().fold(first, |best, job| {
+        if (job.since, job.id) < (best.since, best.id) {
+            job
+        } else {
+            best
+        }
+    });
+    Some((oldest, running.count()))
+}
+
+/// Shorten a path from the left, keeping the end.
+///
+/// The file is at the end and the directories in front of it are shared by
+/// hundreds of other files, so cutting the front loses least: a column of
+/// `…/renderer/core/css/style_engine.cc` still answers the question that a
+/// column of `third_party/blink/rende…` does not.
+fn path_tail(path: &str, width: usize) -> String {
+    let len = path.chars().count();
+    if len <= width {
+        return path.to_owned();
+    }
+    if width <= 1 {
+        return "…".repeat(width);
+    }
+    std::iter::once('…')
+        .chain(path.chars().skip(len - (width - 1)))
+        .collect()
 }
 
 fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
@@ -1235,8 +1283,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Max / Active compile slots configured, and how many are busy now"),
         Line::from("  Jobs         one cell per slot, coloured by the node's CPU use"),
         Line::from("               green → yellow → red; grey means no agent to ask"),
-        Line::from("  Jobs history the last two minutes of that node's slot occupancy,"),
-        Line::from("               sampled once a second; the axis is 2 min at any width"),
+        Line::from("  Files        the file this node has been compiling longest,"),
+        Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
         Line::from("  Send         jobs submitted from here; blank means a pure server"),
         Line::from("  Speed        output bytes per user-second; — until a node compiles"),
@@ -1544,6 +1592,12 @@ mod tests {
             ResourceResult::Ok(snapshot("build03", 2.0, 100, Some(45.0))),
         );
         for id in [1u32, 2] {
+            app.apply(Update::Event(Event::GetCs {
+                job_id: id * 100,
+                client_id: 3,
+                filename: format!("src/renderer/core/paint/box_painter_{id}.cc"),
+                lang: 1,
+            }));
             app.apply(Update::Event(Event::JobBegin {
                 job_id: id * 100,
                 start_time: 0,
@@ -1720,23 +1774,27 @@ mod tests {
     }
 
     #[test]
-    fn the_history_column_spells_itself_out_when_it_fits() {
-        // Truncating a long heading reads worse than choosing a short one.
-        let app = busy_cluster();
-        let header_of = |w: u16| {
-            render(&app, w, 24)
-                .lines()
-                .find(|l| l.contains("Node"))
-                .expect("header")
-                .to_owned()
-        };
-        let wide = header_of(150);
-        assert!(wide.contains("Jobs history"), "{wide}");
+    fn a_long_path_is_cut_at_the_front_so_the_filename_survives() {
+        let mut app = busy_cluster();
+        app.apply(Update::Event(Event::GetCs {
+            job_id: 777,
+            client_id: 3,
+            filename: "third_party/blink/renderer/core/css/style_engine.cc".to_owned(),
+            lang: 1,
+        }));
+        app.apply(Update::Event(Event::JobBegin {
+            job_id: 777,
+            start_time: 0,
+            host_id: 3,
+        }));
 
-        // Narrow enough that the long form would be cut: the heading falls back
-        // rather than showing half a word.
-        let narrow = header_of(34);
-        assert!(!narrow.contains("histor"), "no half a word: {narrow}");
+        let row = row_for(&render(&app, 110, 24), "build03").to_owned();
+        assert!(row.contains("style_engine.cc"), "the file is the answer: {row}");
+        assert!(row.contains('…'), "a cut path should say it was cut: {row}");
+        assert!(
+            !row.contains("third_party"),
+            "the shared prefix is what to lose: {row}"
+        );
     }
 
     #[test]
@@ -1949,18 +2007,46 @@ mod tests {
     }
 
     #[test]
-    fn a_node_history_graph_appears_when_there_is_room() {
+    fn the_files_column_names_what_each_node_is_compiling() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(out.contains("Jobs history"), "{out}");
+        assert!(out.contains("Files"), "{out}");
 
-        // A working node has drawn dots; an idle one has a measured zero, not a
-        // blank — and both differ from a node that is not drawn at all.
-        let busy: String = row_for(&out, "build01").chars().filter(|c| is_braille(*c)).collect();
-        assert!(!busy.is_empty(), "no graph on a busy row: {out}");
+        // A working node names its file; an idle one has nothing to name, and
+        // says so by leaving the column empty rather than by drawing `—`.
         assert!(
-            busy.chars().any(|c| c != '\u{2800}'),
-            "ten ticks of work should leave dots: {busy:?}"
+            row_for(&out, "build01").contains("box_painter_1.cc"),
+            "{out}"
         );
+        let idle = row_for(&out, "build03");
+        assert!(!idle.contains(".cc"), "nothing is compiling here: {idle}");
+        assert!(!idle.contains(UNKNOWN), "and that is known, not unmeasured: {idle}");
+    }
+
+    #[test]
+    fn one_file_is_named_and_the_rest_of_the_slots_are_counted() {
+        // A row is a strip: a list of eight paths would not fit, and the one
+        // worth naming is the one that has been running longest.
+        let mut app = busy_cluster();
+        for job_id in 500..503u32 {
+            app.apply(Update::Event(Event::GetCs {
+                job_id,
+                client_id: 3,
+                filename: format!("src/later_{job_id}.cc"),
+                lang: 1,
+            }));
+            app.apply(Update::Event(Event::JobBegin {
+                job_id,
+                start_time: 0,
+                host_id: 1,
+            }));
+        }
+
+        let row = row_for(&render(&app, 130, 24), "build01").to_owned();
+        assert!(
+            row.contains("box_painter_1.cc"),
+            "the oldest job is the one named: {row}"
+        );
+        assert!(row.contains("+3"), "and the other three are counted: {row}");
     }
 
     #[test]
