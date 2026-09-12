@@ -219,12 +219,12 @@ fn band_height(total: u16, nodes: usize) -> u16 {
     // wants a dozen. The table keeps its border, its heading, a row per node
     // and one spare, so a node arriving does not resize the band.
     let table_wants = nodes as u16 + 4;
-    let floor_height = 3 * floor as u16 + 2;
+    let floor_height = (3 * floor + SEPARATOR_ROWS) as u16 + 2;
     let spare = total.saturating_sub(1 + 1 + table_wants + floor_height);
     // All of the spare goes to the jobs series, because [`series_rows`] gives
     // it everything the other two do not take.
     let jobs = (floor + spare as usize).min(SERIES_ROWS_MAX);
-    (jobs + 2 * floor) as u16 + 2
+    (jobs + 2 * floor + SEPARATOR_ROWS) as u16 + 2
 }
 
 /// How the band's inner height is shared out: `(jobs, each of queue and rate)`.
@@ -243,6 +243,10 @@ fn series_rows(inner: usize) -> (usize, usize) {
 const SERIES_ROWS_TALL: usize = 2;
 /// Rows per series on a large terminal.
 const SERIES_ROWS_LARGE: usize = 3;
+/// Rows spent dividing the three series. Two braille fields that touch read as
+/// one graph with a kink in it, so each series after the first gets a rule.
+const SEPARATOR_ROWS: usize = 2;
+
 /// Rows a series may grow to when the node table does not need the space.
 /// Past this the band would be taking room from a list nobody asked to shrink,
 /// and the gradient has long since stopped getting visibly finer.
@@ -273,13 +277,21 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
 
     let height = inner.height as usize;
     let graph_width = (inner.width as usize).saturating_sub(BAND_LEFT);
-    if height >= 3 * SERIES_ROWS_TALL && graph_width >= BAND_MIN_GRAPH {
-        let (jobs, side) = series_rows(height);
+    if height >= 3 * SERIES_ROWS_TALL + SEPARATOR_ROWS && graph_width >= BAND_MIN_GRAPH {
+        let (jobs, side) = series_rows(height - SEPARATOR_ROWS);
         let mut lines = Vec::with_capacity(height);
         lines.extend(slots_block(summary, cluster, graph_width, jobs));
+        lines.push(Line::default()); // left for the rule drawn below
         lines.extend(queue_block(cluster, summary, graph_width, side));
+        lines.push(Line::default());
         lines.extend(rate_block(cluster, graph_width, side));
         frame.render_widget(Paragraph::new(lines), inner);
+
+        // Over the border rather than inside it, so a rule joins the frame it
+        // divides instead of stopping a cell short of it.
+        for rows_above in [jobs, jobs + 1 + side] {
+            separator(frame, area, inner.y + rows_above as u16);
+        }
         return;
     }
 
@@ -293,6 +305,29 @@ fn cluster_band(frame: &mut Frame, area: Rect, cluster: &Cluster, summary: &Summ
         rate_line(cluster, bar_width),
     ];
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Draw a rule across the band at row `y`, joined to its borders.
+///
+/// Dimmer than the border it joins: it divides the inside of one area rather
+/// than marking where that area ends.
+fn separator(frame: &mut Frame, area: Rect, y: u16) {
+    if area.width < 2 || y >= area.y + area.height {
+        return;
+    }
+    let rule = format!("\u{251c}{}\u{2524}", "\u{2500}".repeat(area.width as usize - 2));
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            rule,
+            Style::default().fg(Color::DarkGray),
+        ))),
+        Rect {
+            x: area.x,
+            y,
+            width: area.width,
+            height: 1,
+        },
+    );
 }
 
 /// Lay one series out as a fixed-width text column beside a dot graph.
@@ -1496,7 +1531,8 @@ mod tests {
 
     #[test]
     fn the_jobs_graph_is_given_the_height_its_gradient_is_made_of() {
-        let (jobs, side) = series_rows(band_height(50, 3) as usize - 2);
+        let inner = band_height(50, 3) as usize - 2;
+        let (jobs, side) = series_rows(inner - SEPARATOR_ROWS);
         // Its colour comes from the row, so rows are gradient steps: two rows
         // is two colours, which is a banding rather than a ramp.
         assert!(jobs >= 8, "not enough steps to read as a gradient: {jobs}");
