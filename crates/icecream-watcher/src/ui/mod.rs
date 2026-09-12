@@ -342,30 +342,16 @@ fn slots_block(
         None => head.push(Span::raw("  —")),
     }
 
-    let mut health = vec![Span::styled(
+    // How many nodes are here now, and nothing else. A tally of departures
+    // since connect used to sit beside this, and it misled: host ids are per
+    // connection, so a laptop that sleeps and wakes counts as a departure
+    // every cycle while the same machine is still in the list — "3 online ·
+    // 2 left" read as five nodes with two missing when there were only ever
+    // three. What is wrong with a node that *is* here shows on its own row.
+    let health = vec![Span::styled(
         format!("{:<7}{} online", "", summary.nodes_online),
         Style::default().add_modifier(Modifier::DIM),
     )];
-    if summary.nodes_metrics_stale > 0 {
-        health.push(Span::styled(
-            format!(" · {} stale", summary.nodes_metrics_stale),
-            Style::default().fg(Color::Yellow),
-        ));
-    }
-    // Not "down": a node that goes offline leaves the list, so this count is
-    // all that is left saying it was ever here.
-    if summary.nodes_left > 0 {
-        health.push(Span::styled(
-            format!(" · {} left", summary.nodes_left),
-            Style::default().fg(Color::LightRed),
-        ));
-    }
-    if summary.nodes_without_agent > 0 {
-        health.push(Span::styled(
-            format!(" · {} no agent", summary.nodes_without_agent),
-            Style::default().add_modifier(Modifier::DIM),
-        ));
-    }
 
     // Utilisation has a real maximum, so the gradient by height means what it
     // means on the bars: near the top is the part worth worrying about.
@@ -469,29 +455,8 @@ fn slots_line(summary: &Summary, bar_width: usize) -> Line<'static> {
         }
     }
 
-    // Health, in the order a reader cares about it.
+    // Node count only, for the reason the tall layout gives.
     spans.push(Span::raw(format!("{} online", summary.nodes_online)));
-    if summary.nodes_metrics_stale > 0 {
-        spans.push(Span::styled(
-            format!(" · {} stale", summary.nodes_metrics_stale),
-            Style::default().fg(Color::Yellow),
-        ));
-    }
-    // Not "down": a node that goes offline leaves the list, so this count is
-    // all that is left saying it was ever here.
-    if summary.nodes_left > 0 {
-        spans.push(Span::styled(
-            format!(" · {} left", summary.nodes_left),
-            Style::default().fg(Color::LightRed),
-        ));
-    }
-    let missing = summary.nodes_without_agent;
-    if missing > 0 {
-        spans.push(Span::styled(
-            format!(" · {missing} no agent"),
-            Style::default().add_modifier(Modifier::DIM),
-        ));
-    }
     spans.into_iter().collect::<Vec<_>>().into()
 }
 
@@ -1874,21 +1839,21 @@ mod tests {
             "slots are scheduler data and must still be drawn: {row}"
         );
         assert!(row.contains(UNKNOWN), "load has no source: {row}");
-        assert!(out.contains("1 no agent"), "{out}");
     }
 
     #[test]
-    fn a_node_that_leaves_disappears_and_the_band_says_so() {
+    fn a_node_that_leaves_disappears_and_stops_being_counted() {
         // Host ids are per connection, so a laptop that sleeps and wakes would
         // otherwise leave a struck-through copy of itself behind every cycle.
-        // The count in the band is what is left of the fact that it was here.
+        // Nothing is kept saying it was here: the band counts what is here.
         let mut app = busy_cluster();
         assert!(render(&app, 130, 24).contains("build03"));
 
         app.apply(stats(3, "State:Offline\n"));
         let out = render(&app, 130, 24);
         assert!(!out.contains("build03"), "the row should be gone:\n{out}");
-        assert!(out.contains("1 left"), "{out}");
+        assert!(out.contains("2 online"), "{out}");
+        assert!(!out.contains("left"), "departures are not the band's business: {out}");
         assert!(out.contains("NODES  2"), "{out}");
     }
 
