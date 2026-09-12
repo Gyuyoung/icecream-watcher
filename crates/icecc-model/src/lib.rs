@@ -343,6 +343,51 @@ pub enum ConnectionState {
     },
 }
 
+/// A stretch of work with no idle gap in it — one build, as far as a monitor
+/// can tell.
+///
+/// The protocol has no notion of a build: the scheduler learns a file exists
+/// when a client asks for a node for it, and never learns how many more are
+/// coming. So a build is inferred from the only thing visible, which is whether
+/// the cluster is doing anything, and what can be said about it is what has
+/// happened — not how much is left.
+#[derive(Debug, Clone)]
+pub struct BuildRun {
+    /// When work first appeared.
+    pub started: Instant,
+    /// When work stopped, for a build that has finished.
+    pub ended: Option<Instant>,
+    /// Completions counted before this build began.
+    completed_before: u64,
+    /// Jobs finished during it.
+    pub done: u64,
+    /// When the cluster last went quiet, while waiting to see whether it stays
+    /// quiet long enough to call the build over.
+    quiet_since: Option<Instant>,
+}
+
+impl BuildRun {
+    /// How long the work took, excluding the silence that ended it.
+    pub fn elapsed(&self) -> Duration {
+        match self.ended {
+            Some(end) => end.saturating_duration_since(self.started),
+            None => self.started.elapsed(),
+        }
+    }
+
+    /// Jobs per second across the whole run, which is not the instantaneous
+    /// rate the graph draws.
+    pub fn average_rate(&self) -> Option<f64> {
+        let secs = self.elapsed().as_secs_f64();
+        (secs >= 1.0 && self.done > 0).then(|| self.done as f64 / secs)
+    }
+}
+
+/// A cluster quiet for this long has finished whatever it was doing. Long
+/// enough to ride out the gap between a link step and the compiles after it,
+/// short enough that the figure is still on screen when someone looks up.
+pub const BUILD_IDLE: Duration = Duration::from_secs(20);
+
 /// Counters over completed work, since connect.
 #[derive(Debug, Clone, Default)]
 pub struct Totals {
@@ -413,6 +458,14 @@ pub struct Cluster {
     pub rate_history: History,
     /// Completion total at the previous tick, to turn a counter into a rate.
     last_completed: u64,
+    /// The build the cluster is working on now, if it is working on one.
+    pub build: Option<BuildRun>,
+    /// The one before it, kept so the band has something to say the moment a
+    /// build ends — which is exactly when someone looks at it.
+    pub last_build: Option<BuildRun>,
+    /// Quiet for this long ends a build. A field rather than a constant so a
+    /// test need not wait out the real one.
+    pub build_idle: Duration,
     /// Drop a job we were told about but never told the end of, after this.
     ///
     /// The protocol gives no guarantee that every `MON_GET_CS` or
@@ -454,6 +507,9 @@ impl Cluster {
             slots_history: History::default(),
             rate_history: History::default(),
             last_completed: 0,
+            build: None,
+            last_build: None,
+            build_idle: BUILD_IDLE,
             job_timeout: Some(Duration::from_secs(30 * 60)),
             first_target: None,
         }
@@ -474,6 +530,10 @@ impl Cluster {
         self.slots_history = History::default();
         self.rate_history = History::default();
         self.last_completed = 0;
+        // A build is a run of work seen on *this* connection: the counters it
+        // is measured against restart here, so it cannot straddle a reconnect.
+        self.build = None;
+        self.last_build = None;
     }
 
     /// Advance every history series by one sample.
@@ -497,6 +557,8 @@ impl Cluster {
         let done_this_tick = completed.saturating_sub(self.last_completed);
         self.last_completed = completed;
         self.rate_history.push(Some(done_this_tick as f32));
+
+        self.track_build(&summary, completed);
 
         let stale_after = self.metrics_stale_after;
         for node in self.nodes.values_mut() {
@@ -903,6 +965,49 @@ impl Cluster {
         s
     }
 
+    /// Follow the run of work the cluster is in, if it is in one.
+    ///
+    /// Anything in flight or waiting counts as work, local jobs included: a
+    /// build that fell back to compiling on the submitter is still a build, and
+    /// a monitor that called it finished would be wrong in exactly the case
+    /// someone is watching to understand.
+    fn track_build(&mut self, summary: &Summary, completed: u64) {
+        let busy = summary.active_jobs + summary.pending_jobs + summary.local_jobs > 0;
+        let now = Instant::now();
+
+        match &mut self.build {
+            None => {
+                if busy {
+                    self.build = Some(BuildRun {
+                        started: now,
+                        ended: None,
+                        completed_before: completed,
+                        done: 0,
+                        quiet_since: None,
+                    });
+                }
+            }
+            Some(run) => {
+                run.done = completed.saturating_sub(run.completed_before);
+                if busy {
+                    run.quiet_since = None;
+                    return;
+                }
+                match run.quiet_since {
+                    None => run.quiet_since = Some(now),
+                    Some(since) if now.saturating_duration_since(since) >= self.build_idle => {
+                        // Ended when the work stopped, not when we decided it
+                        // had: the wait is ours, and charging it to the build
+                        // would inflate every elapsed time by BUILD_IDLE.
+                        run.ended = Some(since);
+                        self.last_build = self.build.take();
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+
     /// Nodes in a stable display order: name, then host id as a tiebreak so
     /// unnamed nodes do not jitter between frames.
     pub fn nodes_sorted(&self) -> Vec<&Node> {
@@ -961,6 +1066,77 @@ mod tests {
         c.apply(stats(1, &node_blob("build01", 8)));
         c.apply(stats(2, &node_blob("build02", 4)));
         c
+    }
+
+    #[test]
+    fn a_build_is_the_run_of_work_between_two_silences() {
+        // There is no build in the protocol: the scheduler is told a file
+        // exists when a client asks for a node for it, and never how many more
+        // are coming. So one is inferred from the cluster going busy and then
+        // staying quiet, and only what happened can be reported.
+        let mut c = cluster_with_two_nodes();
+        c.build_idle = Duration::from_millis(20);
+
+        c.tick_history();
+        assert!(c.build.is_none(), "an idle cluster is not building");
+
+        c.apply(get_cs(1, 1));
+        c.apply(job_begin(1, 1));
+        c.tick_history();
+        let run = c.build.as_ref().expect("work means a build is on");
+        assert_eq!(run.done, 0, "nothing has finished yet");
+
+        c.apply(Update::Event(Event::JobDone(JobDone {
+            job_id: 1,
+            ..Default::default()
+        })));
+        c.tick_history();
+        assert_eq!(c.build.as_ref().unwrap().done, 1);
+
+        // Quiet, but not yet long enough to call it over.
+        c.tick_history();
+        assert!(c.build.is_some(), "one quiet tick is not the end of a build");
+
+        pass(c.build_idle);
+        c.tick_history();
+        let finished = c.last_build.as_ref().expect("the build should have ended");
+        assert!(c.build.is_none());
+        assert_eq!(finished.done, 1);
+        // The wait that detected the end is ours, not the build's.
+        assert!(
+            finished.elapsed() < c.build_idle * 5,
+            "the idle wait was charged to the build: {:?}",
+            finished.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_local_only_build_is_still_a_build() {
+        // Work that fell back to the submitter is the case someone is watching
+        // to understand, so a monitor that called the cluster idle would be
+        // wrong exactly then.
+        let mut c = cluster_with_two_nodes();
+        c.apply(Update::Event(Event::LocalJobBegin {
+            job_id: 5,
+            start_time: 0,
+            host_id: 1,
+            file: "main.cc".into(),
+        }));
+        c.tick_history();
+        assert!(c.build.is_some(), "local jobs are work too");
+    }
+
+    #[test]
+    fn a_reconnect_does_not_leave_a_build_straddling_it() {
+        let mut c = cluster_with_two_nodes();
+        c.apply(get_cs(1, 1));
+        c.apply(job_begin(1, 1));
+        c.tick_history();
+        assert!(c.build.is_some());
+
+        c.apply(connected());
+        assert!(c.build.is_none(), "the counters it was measured against reset");
+        assert!(c.last_build.is_none());
     }
 
     fn get_cs(job_id: u32, client_id: u32) -> Update {

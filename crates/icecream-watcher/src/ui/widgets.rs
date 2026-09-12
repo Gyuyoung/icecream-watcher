@@ -104,6 +104,19 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
+/// A stretch of work, to the precision the figure beside it deserves.
+///
+/// Unlike [`brief_duration`], which drops everything below its leading unit:
+/// "3m" and "3m59s" are the same answer to "how long has this been running",
+/// and a different one to "how long did this build take".
+pub fn span(secs: u64) -> String {
+    match secs {
+        s if s < 60 => format!("{s}s"),
+        s if s < 3600 => format!("{}m{:02}s", s / 60, s % 60),
+        s => format!("{}h{:02}m", s / 3600, (s % 3600) / 60),
+    }
+}
+
 /// Colours used to tell one node from another.
 ///
 /// Chosen by searching the 6×6×6 colour cube for twelve entries that are as far

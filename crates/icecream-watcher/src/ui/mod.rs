@@ -546,11 +546,7 @@ fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>
 
     let head = vec![label("Rate"), band_value(format!("{now:.0}/s"))];
     let notes = vec![Span::styled(
-        format!(
-            "{:<7}peak {peak:.0}/s · {} done since connect",
-            "",
-            cluster.totals.completed_remote + cluster.totals.completed_local
-        ),
+        format!("{:<7}peak {peak:.0}/s · {}", "", build_note(cluster)),
         Style::default().add_modifier(Modifier::DIM),
     )];
 
@@ -561,6 +557,39 @@ fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>
         |_| Style::default().fg(Color::Magenta),
         rows,
     )
+}
+
+/// What the cluster has got through, in the run of work it is in now.
+///
+/// A build, as far as a monitor can see it: the scheduler is told a file exists
+/// only when a client asks for a node for it, and is never told how many more
+/// are coming, so there is no total to count towards and no percentage to show.
+/// What there is — how many files, how long, how fast — is worth saying on its
+/// own, and it is what a reader means by "how is the build going".
+fn build_note(cluster: &Cluster) -> String {
+    match (&cluster.build, &cluster.last_build) {
+        // "building 0 in 11s" reads as a stalled build rather than a young
+        // one, and at the start of every build it is the true figure.
+        (Some(run), _) if run.done == 0 => {
+            format!("building for {}", widgets::span(run.elapsed().as_secs()))
+        }
+        (Some(run), _) => format!(
+            "building {} in {}",
+            run.done,
+            widgets::span(run.elapsed().as_secs())
+        ),
+        (None, Some(run)) => format!(
+            "last build {} in {}",
+            run.done,
+            widgets::span(run.elapsed().as_secs())
+        ),
+        // Nothing has happened on this connection yet, so the only figure
+        // there is, is the one since it opened.
+        (None, None) => format!(
+            "{} done since connect",
+            cluster.totals.completed_remote + cluster.totals.completed_local
+        ),
+    }
 }
 
 /// "How many compile slots are occupied?" and "is the cluster healthy?"
@@ -659,10 +688,7 @@ fn rate_line(cluster: &Cluster, bar_width: usize) -> Line<'static> {
             Style::default().add_modifier(Modifier::DIM),
         ),
         Span::styled(
-            format!(
-                "   {} done since connect",
-                cluster.totals.completed_remote + cluster.totals.completed_local
-            ),
+            format!("   {}", build_note(cluster)),
             Style::default().add_modifier(Modifier::DIM),
         ),
     ]
@@ -1784,6 +1810,22 @@ mod tests {
             "expected a graph beside the figures: {out}"
         );
         assert!(out.contains("3 online"), "{out}");
+    }
+
+    #[test]
+    fn the_band_says_what_this_build_has_got_through() {
+        // No total exists to count towards, so the figures are the ones that
+        // can be known: how many files, and how long it has been going.
+        let app = busy_cluster();
+        let out = render(&app, 130, 24);
+        assert!(out.contains("building"), "{out}");
+
+        // And before anything has happened, the only figure there is.
+        let mut fresh = App::new();
+        fresh.apply(connected());
+        fresh.tick_history();
+        let out = render(&fresh, 130, 24);
+        assert!(out.contains("done since connect"), "{out}");
     }
 
     #[test]
