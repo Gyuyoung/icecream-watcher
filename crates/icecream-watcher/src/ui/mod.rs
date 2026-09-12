@@ -672,12 +672,16 @@ struct Columns {
 /// dropped instead of every column being squeezed into uselessness. The graph
 /// then takes whatever is left, so a wide terminal spends its space on history
 /// rather than on padding.
-fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
+fn columns(width: u16, longest_name: usize) -> Columns {
     let mut cols = match width {
         w if w >= 108 => Columns {
             name: 24,
             cur_max: true,
-            slot_bar: 16,
+            // Twelve, not sixteen: sixteen was a cell for every slot on a
+            // large machine, and the bar stopped counting slots. Braille puts
+            // two steps in a cell, so twelve reads to within a twenty-fourth —
+            // finer than the eye, and four columns back for the filenames.
+            slot_bar: 12,
             jobs: true,
             load: true,
             speed: true,
@@ -721,11 +725,6 @@ fn columns(width: u16, widest_node: usize, longest_name: usize) -> Columns {
         },
     };
 
-    // The meter needs a cell per slot and not one more: sized to the breakpoint
-    // alone, a cluster of 8-slot machines left half the column empty and pushed
-    // everything right of it away for nothing. The spare goes to the filenames.
-    cols.slot_bar = cols.slot_bar.min(widest_node.max(MIN_SLOT_BAR));
-
     let fixed = cols.name as usize
         + cols.slot_bar
         + if cols.cur_max { (COUNT_WIDTH as usize + 1) * 2 } else { 0 }
@@ -761,9 +760,6 @@ const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 7;
 const LOAD_WIDTH: u16 = 5;
 const SPEED_WIDTH: u16 = 6;
-/// Never narrower than this, so the column keeps a recognisable shape even for
-/// a cluster of two-slot machines.
-const MIN_SLOT_BAR: usize = 4;
 /// Below this a filename is elided to the point of saying nothing, so the
 /// column is not worth its space.
 const MIN_FILES: usize = 14;
@@ -779,19 +775,13 @@ const BADGE_ROOM: usize = 8;
 
 fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let cluster = &app.cluster;
-    let widest = cluster
-        .nodes
-        .values()
-        .map(|n| n.max_jobs() as usize)
-        .max()
-        .unwrap_or(0);
     let longest_name = cluster
         .nodes
         .values()
         .map(|n| n.name().chars().count())
         .max()
         .unwrap_or(0);
-    let cols = columns(area.width, widest, longest_name);
+    let cols = columns(area.width, longest_name);
     let stale_after = cluster.metrics_stale_after;
     let median_speed = cluster.median_speed();
 
@@ -1074,17 +1064,20 @@ pub(crate) fn elide(text: &str, max: usize) -> String {
         .collect()
 }
 
-/// One cell per compile slot, so slots can be counted rather than estimated.
+/// How full this node is, as a bar the same width on every row.
 ///
-/// A proportional bar answers "how full", which the `CUR`/`MAX` columns already
-/// do in figures. What a bar cannot do is show *which* slots are busy and who is
-/// using them, and that needs a cell per slot: colour is a property of a
-/// character, so two slots sharing one cell cannot be told apart however many
-/// dots it has.
+/// It was a cell per slot, which made the *length* of the filled run an
+/// absolute job count while the eye was reading it as a fraction: eight slots
+/// all busy drew a shorter run than twelve slots with nine busy, so the node
+/// that had nothing left to give looked like the quieter one. Comparing rows is
+/// the whole reason the column is a bar rather than a figure, so the bar is now
+/// a fraction and every row's is the same length. Counting is what `Max` and
+/// `Active` are for, one column to the left, and which node submitted each job
+/// is in the detail view.
 ///
-/// An occupied slot is drawn as a filled left dot-column with the baseline
-/// carrying on to its right — a bar with a built-in gap — so a run of busy slots
-/// stays countable instead of merging into one block.
+/// Braille resolves to half a cell, so the bar says twice what its width in
+/// characters suggests, and the unfilled part keeps a baseline rather than going
+/// blank — otherwise what the fill is a fraction *of* disappears.
 ///
 /// Colour carries the node's **CPU utilisation** on a green-to-red ramp, so how
 /// hard the machine behind the meter is actually working is legible without
@@ -1107,40 +1100,25 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
         ));
     }
 
-    // More slots than cells: one per slot would be a smear, so fall back to a
-    // proportional bar and let CUR/MAX carry the count.
-    if max > width {
-        let pct = node.slot_pct().unwrap_or(0.0);
-        return Line::from(Span::styled(
-            graph::bar(pct, width),
-            Style::default().fg(load_colour(node)),
-        ));
-    }
-
-    let busy = node.active_jobs.len().min(max);
-    let mut spans = Vec::with_capacity(3);
-    if busy > 0 {
-        spans.push(Span::styled(
-            SLOT_BUSY.to_string().repeat(busy),
-            Style::default().fg(load_colour(node)),
-        ));
-    }
-    let free = max.saturating_sub(busy);
-    if free > 0 {
-        spans.push(Span::styled(
-            SLOT_FREE.to_string().repeat(free),
+    // A fraction, not a tally. One cell per slot made every row a different
+    // length, so the eye — which compares the length of the filled run — read
+    // an eight-slot node at capacity as emptier than a twelve-slot node at a
+    // third. The bar is the same width on every row, so the reading is the
+    // same question on every row; the counts themselves are in Max and Active,
+    // one column to the left.
+    let pct = node.slot_pct().unwrap_or(0.0);
+    let (filled, trough) = graph::bar_split(pct, width);
+    Line::from(vec![
+        Span::styled(filled, Style::default().fg(load_colour(node))),
+        Span::styled(
+            trough,
             // Not `DarkGray`: an idle row is dimmed as well, and the two
             // together left the baseline all but invisible — which loses the
-            // one thing it is there for, showing how many slots the busy part
-            // is a fraction of.
+            // one thing it is there for, showing what the filled part is a
+            // fraction of.
             Style::default().fg(SLOT_BASELINE),
-        ));
-    }
-    // Pad to the column so the graphs to the right of every row line up.
-    if max < width {
-        spans.push(Span::raw(" ".repeat(width - max)));
-    }
-    Line::from(spans)
+        ),
+    ])
 }
 
 /// What the busy part of a node's meter is coloured by: how hard its CPU is
@@ -1160,11 +1138,6 @@ fn load_colour(node: &Node) -> Color {
 /// dark enough not to compete with the slots that are actually busy.
 const SLOT_BASELINE: Color = Color::Rgb(120, 120, 120);
 
-/// An occupied slot: the left dot-column filled, the baseline continuing right.
-/// The gap is what keeps a run of busy slots countable.
-const SLOT_BUSY: char = '⣇';
-/// A free slot: baseline only, so the meter's full extent stays visible.
-const SLOT_FREE: char = '⣀';
 
 fn load_cell<'a>(node: &Node) -> Line<'a> {
     let Some(load) = node.load_avg_1() else {
@@ -1534,7 +1507,7 @@ mod tests {
     fn counts_before_meter(row: &str) -> Vec<String> {
         let head: String = row
             .chars()
-            .take_while(|c| *c != SLOT_BUSY && *c != SLOT_FREE && *c != '⣿')
+            .take_while(|c| !is_meter_glyph(*c))
             .collect();
         let tokens: Vec<&str> = head.split_whitespace().collect();
         tokens
@@ -1549,10 +1522,27 @@ mod tests {
     /// The slot meter on a row: the first run of slot glyphs, which stops at
     /// the padding before the next column. Counting these across the whole row
     /// would also count the history graph's baseline dots.
+    fn is_meter_glyph(c: char) -> bool {
+        matches!(c, METER_FULL | METER_HALF | METER_TROUGH)
+    }
+
+    /// The glyphs a meter is drawn from: a cell the fill covers, one it covers
+    /// half of, and one it has not reached. `graph::bar_split` derives these
+    /// from dot bits rather than naming them, so these are what the tests read
+    /// the screen back with.
+    const METER_FULL: char = '\u{28ff}';
+    const METER_HALF: char = '\u{28c7}';
+    const METER_TROUGH: char = '\u{28c0}';
+
+    /// Cells of a row's meter that the fill reaches.
+    fn meter_fill(row: &str) -> usize {
+        slot_meter(row).chars().filter(|c| *c != METER_TROUGH).count()
+    }
+
     fn slot_meter(row: &str) -> String {
         row.chars()
-            .skip_while(|c| *c != SLOT_BUSY && *c != SLOT_FREE)
-            .take_while(|c| *c == SLOT_BUSY || *c == SLOT_FREE)
+            .skip_while(|c| !is_meter_glyph(*c))
+            .take_while(|c| is_meter_glyph(*c))
             .collect()
     }
 
@@ -1700,8 +1690,10 @@ mod tests {
     fn nodes_get_bars_not_just_numbers() {
         let out = render(&busy_cluster(), 130, 24);
         let row = row_for(&out, "build01");
-        // One slot busy, the rest drawn but free, and the figures beside them.
-        assert_eq!(slot_meter(row), "⣇⣀⣀⣀⣀⣀⣀⣀", "{row}");
+        // One slot of eight busy: an eighth of the bar — a cell and a half of
+        // twelve — the rest drawn but empty, and the figures beside them.
+        assert_eq!(slot_meter(row).chars().count(), 12, "{row}");
+        assert_eq!(meter_fill(row), 2, "{row}");
         assert_eq!(counts_before_meter(row), ["8", "1"], "MAX and ACTIVE: {row}");
     }
 
@@ -1719,10 +1711,14 @@ mod tests {
                     .contains(name)
             })
             .unwrap_or_else(|| panic!("no row for {name}"));
-        (0..buf.area.width)
-            .filter(|x| buf[(*x, row)].symbol() == SLOT_BUSY.to_string())
+        let mut colours: Vec<Color> = (0..buf.area.width)
+            .filter(|x| buf[(*x, row)].symbol() == METER_FULL.to_string())
             .map(|x| buf[(x, row)].style().fg.unwrap_or(Color::Reset))
-            .collect()
+            .collect();
+        // Distinct: how many cells the fill happens to cover is the meter's
+        // business, and this is asking what colour it is drawn in.
+        colours.dedup();
+        colours
     }
 
     /// One node, one running job, and a CPU reading to colour it by.
@@ -1814,7 +1810,7 @@ mod tests {
 
         let cell = (0..buf.area.height)
             .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
-            .find(|(x, y)| buf[(*x, *y)].symbol() == SLOT_FREE.to_string())
+            .find(|(x, y)| buf[(*x, *y)].symbol() == METER_TROUGH.to_string())
             .map(|(x, y)| buf[(x, y)].style())
             .expect("an idle node still draws its meter");
 
@@ -1823,27 +1819,47 @@ mod tests {
     }
 
     #[test]
-    fn every_slot_gets_its_own_cell_so_they_can_be_counted() {
+    fn the_meter_is_a_fraction_so_two_rows_can_be_compared() {
+        // The reading that a cell-per-slot meter got backwards: a small node
+        // with nothing left to give must not look emptier than a big one with
+        // most of its slots free.
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
-        for job in 0..3u32 {
+        app.apply(stats(1, "Name:full\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+        app.apply(stats(2, "Name:roomy\nIP:10.0.0.2\nMaxJobs:32\nNoRemote:false\n"));
+        for job in 0..8u32 {
             app.apply(Update::Event(Event::JobBegin {
                 job_id: 500 + job,
                 start_time: 0,
                 host_id: 1,
             }));
         }
+        for job in 0..9u32 {
+            app.apply(Update::Event(Event::JobBegin {
+                job_id: 600 + job,
+                start_time: 0,
+                host_id: 2,
+            }));
+        }
+
         let out = render(&app, 130, 24);
-        let row = row_for(&out, "build01");
-        assert_eq!(slot_meter(row), "⣇⣇⣇⣀⣀⣀⣀⣀", "{row}");
+        assert!(
+            meter_fill(row_for(&out, "full")) > meter_fill(row_for(&out, "roomy")),
+            "8 of 8 should read fuller than 9 of 32:\n{out}"
+        );
+        // Same length on both rows, or there is nothing to compare.
+        assert_eq!(
+            slot_meter(row_for(&out, "full")).chars().count(),
+            slot_meter(row_for(&out, "roomy")).chars().count(),
+            "{out}"
+        );
     }
 
     #[test]
-    fn more_slots_than_cells_falls_back_to_a_proportional_bar() {
-        // A 128-slot node cannot have a cell each in a 16-column budget; one
-        // smeared cell per eight slots would be a lie, so the meter becomes a
-        // bar and the figures carry the count.
+    fn a_node_with_far_more_slots_than_cells_still_reads() {
+        // A 128-slot node has no cell to spare per slot in a 16-column budget,
+        // and does not need one: the bar is a fraction and the figures carry
+        // the count.
         let mut app = App::new();
         app.apply(connected());
         app.apply(stats(1, "Name:big\nIP:10.0.0.1\nMaxJobs:128\nNoRemote:false\n"));
@@ -1856,7 +1872,12 @@ mod tests {
         }
         let out = render(&app, 130, 24);
         let row = row_for(&out, "big");
-        assert!(row.contains('⣿'), "expected a proportional bar: {row}");
+        let meter = slot_meter(row);
+        assert_eq!(
+            meter_fill(row) * 2,
+            meter.chars().count(),
+            "half the slots is half the bar: {row}"
+        );
         assert_eq!(counts_before_meter(row), ["128", "64"], "{row}");
     }
 
@@ -1906,7 +1927,7 @@ mod tests {
         // out of the token list entirely; a printed 0 would not.
         let tail: Vec<&str> = server
             .chars()
-            .position(|c| c == SLOT_FREE)
+            .position(|c| c == METER_TROUGH)
             .map(|i| &server[server.char_indices().nth(i).unwrap().0..])
             .unwrap_or(server)
             .split_whitespace()
@@ -2073,9 +2094,8 @@ mod tests {
         let row = row_for(&out, "build01");
         // Everything in this table comes from the scheduler except LOAD, so a
         // missing agent costs one column and nothing else.
-        assert_eq!(
-            slot_meter(row),
-            SLOT_FREE.to_string().repeat(8),
+        assert!(
+            slot_meter(row).chars().all(|c| c == METER_TROUGH),
             "slots are scheduler data and must still be drawn: {row}"
         );
         assert!(row.contains(UNKNOWN), "load has no source: {row}");
@@ -2143,10 +2163,10 @@ mod tests {
     }
 
     #[test]
-    fn columns_are_sized_to_the_cluster_not_to_the_breakpoint() {
+    fn the_name_column_is_sized_to_the_cluster_not_to_the_breakpoint() {
         // Space spent on a column that nothing fills is space taken from every
-        // column after it. Both of these left a block of empty cells and pushed
-        // the rest of the row right for nothing.
+        // column after it: a fixed-width name column left a block of empty
+        // cells and pushed the rest of the row right for nothing.
         let small = {
             let mut app = App::new();
             app.apply(connected());
@@ -2163,11 +2183,7 @@ mod tests {
             render(&app, 130, 24)
         };
 
-        // The meter is exactly one cell per slot on the widest node.
-        assert_eq!(slot_meter(row_for(&small, "a ")).chars().count(), 4);
-        assert_eq!(slot_meter(row_for(&large, "a-very")).chars().count(), 16);
-
-        // And the name column follows the longest name rather than a constant.
+        // The name column follows the longest name rather than a constant.
         let name_col = |out: &str| {
             out.lines()
                 .find(|l| l.contains("Node"))
@@ -2367,7 +2383,7 @@ mod tests {
         // Agent staleness must not blank what the *scheduler* told us: slots
         // and speed have nothing to do with whether an agent answered.
         let row = row_for(&out, "build01");
-        assert_eq!(slot_meter(row).matches(SLOT_BUSY).count(), 1, "{row}");
+        assert_eq!(meter_fill(row), 2, "one slot of eight, on a twelve-cell bar: {row}");
         assert!(row.contains("3200"), "{row}");
     }
 

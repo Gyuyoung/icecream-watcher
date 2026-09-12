@@ -80,9 +80,14 @@ pub fn area(values: &[f32], max: f32, width: usize, rows: usize) -> Vec<String> 
 /// bar of the same width. The unfilled part keeps a baseline row of dots rather
 /// than going blank, so the bar's full extent — and therefore what the filled
 /// part is a fraction *of* — stays visible.
-pub fn bar(pct: f32, width: usize) -> String {
+/// A bar cut where the fill ends, so the two parts can be coloured apart.
+///
+/// A cell the fill only half covers belongs to the filled part: it is the fill
+/// that it is showing, and colouring it as trough would round the reading down
+/// by half a cell on every bar.
+pub fn bar_split(pct: f32, width: usize) -> (String, String) {
     if width == 0 {
-        return String::new();
+        return (String::new(), String::new());
     }
     let dot_cols = width * CELL_COLS;
     let filled = (pct.clamp(0.0, 100.0) / 100.0 * dot_cols as f32).round() as usize;
@@ -96,10 +101,15 @@ pub fn bar(pct: f32, width: usize) -> String {
             column[CELL_ROWS - 1] // baseline only
         };
     }
-    cells
+    let glyphs: Vec<char> = cells
         .into_iter()
         .map(|bits| char::from_u32(BRAILLE_BASE + bits as u32).unwrap_or(' '))
-        .collect()
+        .collect();
+    let cut = filled.div_ceil(CELL_COLS).min(width);
+    (
+        glyphs[..cut].iter().collect(),
+        glyphs[cut..].iter().collect(),
+    )
 }
 
 /// Colour for character row `r` of an `rows`-tall graph whose axis is a 0..100
@@ -123,6 +133,13 @@ pub fn row_colour(r: usize, rows: usize) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The whole bar as one string. The renderer colours the two parts
+    /// differently and so keeps them apart; these tests read the shape.
+    fn bar(pct: f32, width: usize) -> String {
+        let (filled, trough) = bar_split(pct, width);
+        filled + &trough
+    }
 
     fn flat(value: f32, dots: usize) -> Vec<f32> {
         vec![value; dots]
