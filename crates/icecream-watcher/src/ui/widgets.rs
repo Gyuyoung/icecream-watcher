@@ -218,6 +218,20 @@ pub fn rgb(r: u8, g: u8, b: u8) -> Color {
     }
 }
 
+/// The screen's own foreground: real white, not the terminal's colour 15.
+///
+/// The same argument as [`background`]. Slot 15 is "bright white" only by
+/// convention — a theme is free to paint it cream, or a grey a shade off the
+/// one this uses for secondary text, and then the two levels of the screen's
+/// hierarchy stop being two levels.
+pub fn foreground() -> Color {
+    if truecolor() {
+        Color::Rgb(255, 255, 255)
+    } else {
+        Color::Indexed(231) // the cube's white, not palette slot 15
+    }
+}
+
 /// The screen's own background: real black, not the terminal's colour 0.
 ///
 /// Colour 0 is whatever the user's theme says it is — Solarized paints it a

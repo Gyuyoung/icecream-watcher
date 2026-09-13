@@ -81,7 +81,7 @@ pub fn draw(frame: &mut Frame, app: &App, ui: &mut Ui) {
         Block::default().style(
             Style::default()
                 .bg(widgets::background())
-                .fg(Color::White),
+                .fg(widgets::foreground()),
         ),
         area,
     );
@@ -1383,7 +1383,7 @@ fn confirm_quit_overlay(frame: &mut Frame, area: Rect) {
                     ))
                     .title_alignment(Alignment::Center),
             )
-            .style(Style::default().bg(widgets::background()).fg(Color::White)),
+            .style(Style::default().bg(widgets::background()).fg(widgets::foreground())),
         popup,
     );
 }
@@ -1442,7 +1442,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
                     .title(" icecream-watcher help ")
                     .title_alignment(Alignment::Center),
             )
-            .style(Style::default().bg(widgets::background()).fg(Color::White)),
+            .style(Style::default().bg(widgets::background()).fg(widgets::foreground())),
         popup,
     );
 }
