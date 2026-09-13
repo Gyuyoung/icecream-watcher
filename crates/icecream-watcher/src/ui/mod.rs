@@ -815,13 +815,15 @@ fn columns(width: u16, longest_name: usize) -> Columns {
     // little slack so a name never collides with the right-hand border.
     let mut spare = (width as usize).saturating_sub(fixed + 6);
 
+    // The expand mark lives in this column too, so ask for its width on top of
+    // the name's rather than taking it out of the name.
     // Names come first with space going spare — an elided hostname costs the
     // reader more than a shorter path does, and build hosts are often named at
     // length — but only as far as the longest name actually needs. Widening to
     // a fixed maximum left a column of empty cells on a cluster of short names
     // and pushed everything after it away for nothing.
     if width >= 108 {
-        let wanted = (longest_name + BADGE_ROOM).min(NAME_MAX);
+        let wanted = (longest_name + BADGE_ROOM + EXPAND_MARK.len()).min(NAME_MAX);
         let widen = spare
             .min(wanted.saturating_sub(cols.name as usize))
             .min(spare / 2);
@@ -1096,6 +1098,14 @@ fn path_tail(path: &str, width: usize) -> String {
         .collect()
 }
 
+/// The mark before every hostname, saying the row has more behind it.
+///
+/// The detail view was reachable and invisible: the footer named the key, but
+/// nothing on the row itself said there was anything to open. One character,
+/// in the colour the footer already uses for keys, so it reads as something to
+/// press rather than as data.
+const EXPAND_MARK: &str = "+ ";
+
 fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
     // At most one badge, in order of how much it should worry the reader.
     let badge: Option<(String, Color)> = if matches!(node.resource_state, ResourceState::Error { .. }) {
@@ -1119,10 +1129,16 @@ fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
         .map_or(0, |(text, _)| text.chars().count() + 1);
     // The name is where the colour is most useful: it is what the eye looks
     // for when scanning back to a node it was already watching.
-    let mut spans = vec![Span::styled(
-        elide(node.name(), width.saturating_sub(badge_width)),
-        Style::default().fg(widgets::node_colour(node.name())),
-    )];
+    let room = width
+        .saturating_sub(badge_width)
+        .saturating_sub(EXPAND_MARK.chars().count());
+    let mut spans = vec![
+        Span::styled(EXPAND_MARK, Style::default().fg(Color::Cyan)),
+        Span::styled(
+            elide(node.name(), room),
+            Style::default().fg(widgets::node_colour(node.name())),
+        ),
+    ];
 
     if let Some((text, colour)) = badge {
         spans.push(Span::styled(
@@ -1395,6 +1411,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
             "reading the screen",
             Style::default().add_modifier(Modifier::BOLD),
         )),
+        Line::from("  +            this row opens: select it and press Enter"),
         Line::from("  Max / Active compile slots configured, and how many are busy now"),
         Line::from("  Jobs         how full this node's compile slots are, as a bar"),
         Line::from("               green → yellow → red; every row's bar is one width"),
@@ -1402,9 +1419,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
         Line::from("  Send         jobs submitted from here; blank means a pure server"),
-        Line::from("  Perf         measured speed against the cluster's middle node:"),
-        Line::from("               1.0x is the median, 0.4x is two and a half times"),
-        Line::from("               slower; — until enough of its jobs have finished"),
+        Line::from("  Perf         measured speed against the cluster's middle node;"),
+        Line::from("               0.4x is two and a half times slower than the rest"),
         Line::from("  —            not measured, or not reported by this node"),
         Line::from("  blank count  none, which is different from — : the answer is known"),
         Line::from("  !            what is limiting this node, or a slow outlier"),
@@ -2229,6 +2245,24 @@ mod tests {
         for machine in ["CPU", "MEM", "TEMP"] {
             assert!(!header.contains(machine), "{machine} should be gone: {header}");
         }
+    }
+
+    #[test]
+    fn every_row_says_it_can_be_opened() {
+        // The detail view was reachable and invisible: the footer named the
+        // key, nothing on the row said there was anything behind it.
+        let out = render(&busy_cluster(), 130, 24);
+        for name in ["build01", "build02", "build03"] {
+            let row = row_for(&out, name);
+            let mark = row.find('+').expect("no mark on the row");
+            let at = row.find(name).expect("no name on the row");
+            assert!(mark < at, "the mark belongs before the name: {row}");
+        }
+        // ...and the name still fits beside it.
+        assert!(
+            !row_for(&out, "build01").contains('…'),
+            "the mark must not be paid for by the name"
+        );
     }
 
     #[test]

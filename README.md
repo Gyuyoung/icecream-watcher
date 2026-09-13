@@ -30,13 +30,13 @@ icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ NODES  7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │Node                        Max Active Jobs         Receive    Send   Perf  Files                                   │
-│build01                      16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      23      48   1.0×  …rt_card/smart_card.mojom-blink.cc +14  │
-│build02                      16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀      18           1.0×  …web_sensor_provider.mojom-blink.cc +9  │
-│build03                      16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀      16           1.0×  …ebaudio/audio_worklet_processor.cc +7  │
-│build04                      16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀      12       9   0.3×! …ebaudio/audio_worklet_processor.cc +3  │
-│build05                       8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       8           1.0×                                          │
-│build07                      16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀              10      —                                          │
-│laptop local                 12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       1      11      —  …r/core/css/resolver/style_resolver.cc  │
+│+ build01                    16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      23      48   1.0×  …rt_card/smart_card.mojom-blink.cc +14  │
+│+ build02                    16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀      18           1.0×  …web_sensor_provider.mojom-blink.cc +9  │
+│+ build03                    16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀      16           1.0×  …ebaudio/audio_worklet_processor.cc +7  │
+│+ build04                    16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀      12       9   0.3×! …ebaudio/audio_worklet_processor.cc +3  │
+│+ build05                     8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       8           1.0×                                          │
+│+ build07                    16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀              10      —                                          │
+│+ laptop local               12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       1      11      —  …r/core/css/resolver/style_resolver.cc  │
 │                                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 q quit  ↑↓/jk select  Enter detail  s sort  n i p by name/jobs/perf  ? help   selected build02
@@ -104,6 +104,10 @@ here, the way it occupies no slot in the meter.
 Narrower terminals drop whole columns rather than squeezing every one into
 uselessness; spare width goes to hostnames first, because an elided name costs
 more than a shorter path.
+
+The `+` before every hostname says the row has more behind it. The detail view
+was reachable and invisible before it: the footer named the key, but nothing on
+the row itself said there was anything to open.
 
 `Enter` opens the node the overview points at. The meter says how many slots are
 busy and whose work is in them; this says **which file each slot is compiling**,
