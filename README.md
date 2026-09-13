@@ -10,77 +10,76 @@ honest when the cluster or the network misbehaves. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
 
 ```
-icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] help
+icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 00:00:00   sort name   [?] help
 ┌ ICECREAM CLUSTER ──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│JOBS   38/88      43%                     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
-│       7 online · 1 left · 1 no agent     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶│
-│QUEUE  7 wait    → steady                 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│Jobs   38/88      43%                     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│       7 online                           ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
+│┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈│
+│Queue  7 wait    → steady                 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │       peak 7 · 38 remote · 0 local       ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
-│RATE   0/s                                ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
-│       peak 1/s · 0 done since connect    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
+│┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈│
+│Rate   0/s                                ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│       peak 40/s · building for 0s        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-┌ 7 nodes ───────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│NODE                        MAX ACTIVE JOBS             RECEIVE    SEND LOAD  SPEED  JOBS HISTORY                   │
-│build01                      16     15 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀      15       8 14.2   3200  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿  │
-│build02                      16     10 ⣇⣇⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀      10         14.2   2900  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶⣶  │
-│build03                      16      8 ⣇⣇⣇⣇⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀       8         14.2   3100  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤  │
-│build04                      16      4 ⣇⣇⣇⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       4       9 14.2    940! ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build05                       8        ⣀⣀⣀⣀⣀⣀⣀⣀                         14.2   3050  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│build07                      16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀              10    —   3000  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│laptop local                 12      1 ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀           1      11 14.2      —  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
-│                                                                                                                    │
+┌ NODES  7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Node                        Max Active Jobs         Receive    Send   Perf  Files                                   │
+│build01                      16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      23      48   1.0×  …rt_card/smart_card.mojom-blink.cc +14  │
+│build02                      16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀      18           1.0×  …web_sensor_provider.mojom-blink.cc +9  │
+│build03                      16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀      16           1.0×  …ebaudio/audio_worklet_processor.cc +7  │
+│build04                      16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀      12       9   0.3×! …ebaudio/audio_worklet_processor.cc +3  │
+│build05                       8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       8           1.0×                                          │
+│build07                      16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀              10      —                                          │
+│laptop local                 12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       1      11      —  …r/core/css/resolver/style_resolver.cc  │
 │                                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-q quit  ↑↓/jk select  Enter detail  s sort  n i l p by name/jobs/load/speed  ? help   selected build02
+q quit  ↑↓/jk select  Enter detail  s sort  n i p by name/jobs/perf  ? help   selected build02
 ```
 
 Reading it: every column is an **Icecream** figure — compile slots, jobs
-compiled here (`RECEIVE`) and submitted from here (`SEND`), the scheduler's load,
-and compile speed. A node whose `SEND` is empty is a pure compile server: it
-takes work and sends none. Across a cluster the `RECEIVE` figures sum to the
-`SEND` figures, so a mismatch means an attribution was lost, not that a node is
-idle.
+compiled here (`Receive`) and submitted from here (`Send`), measured
+performance, and the file each node is working on. A node whose `Send` is empty
+is a pure compile server: it takes work and sends none. Across a cluster the
+`Receive` figures sum to the `Send` figures, so a mismatch means an attribution
+was lost, not that a node is idle.
 
 **A zero counter is blank, and `—` means unknown.** They are different facts and
-this table shows both on the same row: an empty `SEND` says the answer is known
-and it is none, while `LOAD —` says there is no figure to show. Columns are also
-sized to the cluster rather than to a fixed maximum — the meter gets one cell per
-slot on the largest node, and the name column follows the longest hostname — so
+this table shows both on the same row: an empty `Send` says the answer is known
+and it is none, while `Perf —` says there is not yet enough measured to show.
+The name column is sized to the cluster rather than to a fixed maximum, so
 nothing is padded out with cells that nothing fills.
-A machine's CPU, memory and temperature are its own business and appear nowhere
-as figures — but the `JOBS` meter is **coloured by the node's CPU use**, green
-through yellow to red, so how hard each machine is actually working is legible
-without reading a number. `build04` is a slow outlier
-and the `!` on its speed says so. `build07` has no agent, so only its
-load is unknown; everything else came from the scheduler.
+A machine's CPU, memory and temperature are its own business and belong in the
+detail view. `build04` is a slow outlier and the `!` beside its `Perf` says so:
+at `0.3×` it is producing a third of what the middle node of this cluster
+produces per second of CPU. `build05` and `build07` have not finished enough
+jobs on this connection for the figure to mean anything, so they say `—` rather
+than guess. Nothing on this screen needs an agent on the nodes.
 
 **A node that goes offline leaves the list**, and comes back by itself when its
 daemon reattaches. Host ids are per *connection* — the scheduler issues a new one
 every time a daemon attaches — so a laptop that sleeps and wakes would otherwise
 leave a struck-through copy of itself behind on every cycle, until a morning of
 that is a screen of one machine's remains crowding out the nodes that are
-running. The band keeps the count (`1 left`), which is what remains of the fact
-that the node was ever there.
+running. Only what is here now is counted: a tally of departures sat beside the
+online count for a while and misled, because a laptop that sleeps and wakes is
+counted as a departure every cycle while the same machine is still in the list.
 
-`MAX` and `ACTIVE` carry the job counts as plain numbers, and the `JOBS` meter
-beside them gives **one cell per slot**, so slots can be counted rather than
-estimated.
-A busy slot is a filled dot-column with the baseline carrying on to its right —
-a bar with a gap built in — so a run of them stays countable instead of merging
-into one block. Their colour is the node's CPU utilisation on a green-to-red
-ramp — the whole machine's load, not the meter's own fill — so a green meter at
-12/12 says "full, but coasting" and a red one says "full and struggling". A node
-with no agent to ask is drawn grey rather than green: not measured must not look
-like idle. A node with more slots than the column has cells falls back to a
-proportional bar, and the figures carry the count.
+`Max` and `Active` carry the job counts as plain numbers, and the `Jobs` meter
+beside them is **a fraction**: the same width on every row, filled by how full
+the node is. It was a cell per slot, which made the length of the filled run an
+absolute job count while the eye read it as a fraction — eight slots all busy
+drew a shorter run than twelve slots with nine busy, so the node with nothing
+left to give looked like the quieter one. Comparing rows is the whole reason the
+column is a bar rather than a figure. Its colour ramps with the same fraction,
+green through yellow to red, so a saturated machine is picked out of a list
+without reading a figure. Braille resolves to half a cell, so the bar says twice
+what its width in characters suggests.
 
 The gradient is 24-bit colour by default so that it is actually gradual; pass
 `--colors-256` on a terminal that cannot show it and the ramp rounds to the
@@ -93,38 +92,39 @@ yellow mean *state* here — a problem badge, a saturated metric, a hot sensor �
 a healthy node that happened to hash into that range would read as a node in
 trouble.
 
-`JOBS HISTORY` is a record over time, not another reading of now: once a second
-it samples what fraction of that node's slots are busy. It is not
-cumulative — a node that quietens down sends the line back down. The axis is a
-fixed two minutes at every terminal width, so two nodes can be read against each
-other, and a monitor started thirty seconds ago fills only the right-hand quarter
-it has earned. The strip gets one character row, so four levels rather than the
-eight a block sparkline gives, but twice the horizontal resolution — for "has this node
-been busy, and is it busier now than a minute ago" that is the better trade, and
-the exact figure is one column to the left. Narrower terminals drop whole columns rather than
-squeezing every one into uselessness; spare width goes to hostnames first,
-because an elided name costs more than a shorter graph.
+`Files` names **what each node is compiling right now**. One name, not a list: a
+row is a strip, and the job that has been running longest is both the one worth
+naming — it answers "what is taking so long" — and the one most likely to still
+be there on the next frame, so the column can be read instead of flickering. The
+rest are counted as `+n`, and the detail view names them. Long paths are cut at
+the front, because the file is at the end and the directories in front of it are
+shared by hundreds of others. A node compiling only for itself shows nothing
+here, the way it occupies no slot in the meter.
+
+Narrower terminals drop whole columns rather than squeezing every one into
+uselessness; spare width goes to hostnames first, because an elided name costs
+more than a shorter path.
 
 `Enter` opens the node the overview points at. The meter says how many slots are
 busy and whose work is in them; this says **which file each slot is compiling**,
 for how long, and everything the scheduler reports about the node itself:
 
 ```
-icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] help
+icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 00:00:00   sort name   [?] help
 ┌ build02  10.0.0.2  x86_64  proto 43 ───────────────────────────────────────────────────────────────────────────────┐
 │  healthy                                                                                                           │
 │                                                                                                                    │
 │JOBS                                                                                                                │
-│    Job   1  (   0.1s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
-│    Job   2  (   0.1s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
-│    Job   3  (   0.1s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
-│    Job   4  (   0.1s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
-│    Job   5  (   0.1s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
-│    Job   6  (   0.1s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
-│    Job   7  (   0.1s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
-│    Job   8  (   0.1s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
-│    Job   9  (   0.1s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
-│    Job  10  (   0.1s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   1  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job   2  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   3  (   0.0s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
+│    Job   4  (   0.0s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
+│    Job   5  (   0.0s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
+│    Job   6  (   0.0s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
+│    Job   7  (   0.0s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
+│    Job   8  (   0.0s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
+│    Job   9  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job  10  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
 │    6 of 16 slots free                                                                                              │
 │                                                                                                                    │
 │NODE                                                                                                                │
@@ -137,15 +137,17 @@ icecream-watcher  build-master:8765  proto 43  up 00:00:00   sort name   [?] hel
 │    accepts remote    yes                                                                                           │
 │    speed             2900.0 output bytes per user-second                                                           │
 │    load              610 of 1000 — the scheduler's placement weight                                                │
-│    load average      8.54  8.54  8.54   (1 / 5 / 10 min)                                                           │
+│    load average      8.54  8.54  8.54   (1 / 5 / 10 min)   (1.07 per core, over 8)                                 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-Esc back  ↑↓/jk scroll  q quit   build02
+Esc/q back  ↑↓/jk scroll  Ctrl-C quit   build02
 ```
 
 Below the fold the `NODE` section continues with free memory and the job counters
-since this monitor connected, and ends with a footnote naming the agent — it is
-what colours the `JOBS` meters, so there has to be somewhere to see the figures
-behind the colour. Anything wrong with the node — no ack
+since this monitor connected, and ends with a footnote naming the agent, where
+one is running. This is where a machine's own figures live: the load average
+divided by the cores the agent reports, because a load average is absolute and a
+column of them would invite a comparison that cannot be made. Anything wrong
+with the node — no ack
 from the scheduler, an agent that answered with nonsense, a hostname that does
 not match — is stated at the top, before the numbers it would explain.
 
@@ -221,28 +223,36 @@ See [contrib/systemd/](contrib/systemd/) for a hardened unit file and deployment
 notes. `icecream-watcher` finds agents by itself — it polls each node at the address the
 scheduler reports, so there is nothing to configure per node.
 
-Nodes without an agent still appear, with their resource cells reading `—`; the
-header shows coverage as `agents 7/8`, so a half-finished rollout is visible
-rather than looking like a cluster of idle machines. `--no-agents` turns polling
+**The agent is optional and the overview does not need it.** Every column on the
+main screen comes from the scheduler, including `Perf`, which is computed from
+what finished jobs report rather than from anything installed on the node. What
+an agent adds is the machine's own side of the story — why a node is slow, not
+just that it is — and it appears in the detail view. A node without one shows
+`no agent here` there and is otherwise unaffected. `--no-agents` turns polling
 off entirely.
 
 ### Keys
 
 | Key | Action |
 |---|---|
-| `q`, `Ctrl-C` | quit |
-| `Esc` | close the help overlay, leave the detail view, or quit |
+| `q`, `Esc` | close the help overlay, leave the detail view, then ask to quit |
+| `Ctrl-C` | quit, from wherever you are, without asking |
 | `↑` / `k`, `↓` / `j` | move the selection, or scroll the detail view |
 | `PgUp` / `PgDn` | move or scroll ten rows |
 | `s` | cycle the sort key |
-| `n`, `i`, `l`, `p` | sort by name, jobs, load, speed |
+| `n`, `i`, `p` | sort by name, jobs, perf |
 | `r` | redraw; while disconnected, retry the connection now |
 | `?` | help |
 | `Enter` | open or close the node detail view |
 
-Only Icecream figures can be sorted on: sorting by a node's CPU or memory went
-with the columns that showed them, because a list that reorders itself by a
-number the reader cannot see is worse than one with fewer orderings. Metric
+`q` asks before it goes. A monitor is something people leave running for a day
+and every counter on the screen is "since connect", so a stray keystroke costs
+the whole session's history; only `y` answers the prompt, and `Ctrl-C` skips it.
+
+Only figures the table shows can be sorted on: sorting by CPU, memory, or the
+scheduler's placement weight went with the columns that showed them, because a
+list that reorders itself by a number the reader cannot see is worse than one
+with fewer orderings. Metric
 sorts put the busiest node first, since the reason to sort by load is to see
 what is loaded. Nodes with no measurement sort last rather than being flipped
 to the top. The selection follows
@@ -250,21 +260,22 @@ its node through a re-sort.
 
 ## Reading the screen
 
-- `—` and `····` mean **not measured**, never zero. An idle node reads `0%`; a
-  node with no agent reads `—`. The two must not look the same.
-- `!` marks the metric that makes a node a bottleneck — memory pressure first,
-  then CPU saturation, then every slot taken on a machine that is otherwise
-  idle — or, on SPEED, a node well below the cluster median.
+- `—` and `····` mean **not measured**, never zero. A node that has compiled
+  nothing yet reads `—` on `Perf`; one that has compiled slowly reads a small
+  multiple. The two must not look the same.
+- `!` on `Perf` marks a node well below the cluster median.
 - **Dim rows are idle.** Offline rows strike through and sink to the bottom.
-- **SLOTS** is remote compiles running / slots offered. Local compiles occupy no
-  scheduler slot and are counted separately.
-- **SPEED** is `output bytes / user-second`, and is **unknown until a node has
-  actually compiled something** — a fresh cluster shows `—` everywhere. It is
-  not zero-because-slow.
-- **LOAD** prefers the agent's 1 Hz reading and falls back to the scheduler's,
-  which only updates when load shifts by 10 %. It is coloured by load *per
-  core*, so a 4-core and a 64-core node can be compared.
-- The **QUEUE** and **RATE** graphs are scaled to their own peak — a queue has
+- **`Jobs`** is remote compiles running as a fraction of slots offered. Local
+  compiles occupy no scheduler slot and are counted separately.
+- **`Perf`** is measured, not estimated: bytes of compiled output per second of
+  CPU time, as a multiple of what the cluster's middle node manages. It comes
+  from what finished jobs report, so it needs nothing installed on the nodes,
+  and it is the ratio of the sums rather than the mean of the ratios — one job
+  says almost nothing, because what a file *is* decides how much object a
+  CPU-second buys. Under five finished jobs it shows `—` rather than a figure
+  nobody should act on, and failed compiles are not counted: one that stopped at
+  the first error would make a node look like the fastest in the cluster.
+- The **`Queue`** and **`Rate`** graphs are scaled to their own peak — a queue has
   no natural maximum — and the peak is printed next to them so a flat graph at
   full height cannot be mistaken for a queue at some limit.
 - Badges after a node name: `down`, `local` (refuses remote jobs), `no ack` (the
@@ -277,8 +288,9 @@ its node through a re-sort.
 
 The scheduler's own `Load` field — a composite 0–1000 scheduling weight,
 `max(1000 - idle, memory pressure)`, forced to 1000 when a node is low on disk —
-is deliberately **not** shown as a bar. It is not CPU utilisation, and drawing it
-as one would be a confidently wrong picture.
+is deliberately **not** shown as a bar, or sorted on. It is not CPU utilisation,
+and drawing it as one would be a confidently wrong picture. It is in the detail
+view, labelled for what it is.
 
 ## Notes on connecting
 
