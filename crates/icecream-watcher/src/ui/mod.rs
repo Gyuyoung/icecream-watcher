@@ -1304,8 +1304,8 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
         Span::styled(" detail  ", dim),
         Span::styled("s", key),
         Span::styled(" sort  ", dim),
-        Span::styled("n i l p", key),
-        Span::styled(" by name/jobs/load/speed  ", dim),
+        Span::styled("n i p", key),
+        Span::styled(" by name/jobs/perf  ", dim),
         Span::styled("?", key),
         Span::styled(" help", dim),
     ];
@@ -1388,7 +1388,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  q, Esc       close this, leave the detail view, then ask to quit"),
         Line::from("  r            redraw; while disconnected, retry now"),
         Line::from("  s            cycle sort"),
-        Line::from("  n / i / l / p  sort by name / jobs / load / speed"),
+        Line::from("  n / i / p    sort by name / jobs / perf"),
         Line::from("  ?            toggle this help"),
         Line::from(""),
         Line::from(Span::styled(
@@ -2358,9 +2358,9 @@ mod tests {
     #[test]
     fn the_sort_key_is_shown_so_the_order_is_never_a_mystery() {
         let mut app = busy_cluster();
-        app.set_sort(crate::app::SortKey::Load);
+        app.set_sort(crate::app::SortKey::Perf);
         let out = render(&app, 130, 24);
-        assert!(out.contains("sort load"), "{out}");
+        assert!(out.contains("sort perf"), "{out}");
     }
 
     #[test]
@@ -2808,6 +2808,36 @@ mod tests {
             "Name:build07\nIP:10.0.0.8\nMaxJobs:16\nNoRemote:false\nSpeed:3000\n",
         ));
 
+        // Finished work behind each node, so the Perf column has something
+        // measured to divide. The laptop gets none: a node with too few jobs
+        // behind it says so rather than guessing.
+        for (id, name, _, _, _, _, speed) in nodes {
+            if name == "laptop" {
+                continue;
+            }
+            for n in 0..8u32 {
+                let job_id = 800_000 + id * 100 + n;
+                app.apply(Update::Event(Event::GetCs {
+                    job_id,
+                    client_id: 1,
+                    filename: SOURCES[(n as usize + id as usize) % SOURCES.len()].to_owned(),
+                    lang: 1,
+                }));
+                app.apply(Update::Event(Event::JobBegin {
+                    job_id,
+                    start_time: 0,
+                    host_id: id,
+                }));
+                app.apply(Update::Event(Event::JobDone(icecc_proto::JobDone {
+                    job_id,
+                    exit_code: 0,
+                    user_msec: (100_000_000.0 / (speed * 30.0)) as u32,
+                    out_uncompressed: 100_000,
+                    ..Default::default()
+                })));
+            }
+        }
+
         // Occupy slots, and leave a few jobs queued. Submitters are mixed, so
         // the slot meters show whose work is running where.
         let mut job = 1000;
@@ -3188,7 +3218,7 @@ mod tests {
         detail_of(&mut app, "build01");
         let before = app.sort;
         app.on_key(crate::app::Key::CycleSort);
-        app.on_key(crate::app::Key::Sort(crate::app::SortKey::Load));
+        app.on_key(crate::app::Key::Sort(crate::app::SortKey::Perf));
         assert_eq!(app.sort, before, "a hidden list must not reorder silently");
     }
 
@@ -3197,7 +3227,7 @@ mod tests {
         let mut app = busy_cluster();
         let out = detail_of(&mut app, "build01");
         assert!(out.contains("Esc") && out.contains("scroll"), "{out}");
-        assert!(!out.contains("by name/jobs/load/speed"), "{out}");
+        assert!(!out.contains("by name/jobs/perf"), "{out}");
     }
 
     #[test]
