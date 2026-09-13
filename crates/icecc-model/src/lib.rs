@@ -12,6 +12,7 @@
 
 pub mod history;
 
+use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::{Duration, Instant};
 
@@ -108,6 +109,8 @@ pub struct Node {
     pub mem_history: History,
     /// Recent compile-slot occupancy, as a percentage of this node's slots.
     pub slots_history: History,
+    /// What this node's finished jobs say about how fast it actually is.
+    pub throughput: Throughput,
 }
 
 impl Node {
@@ -126,6 +129,7 @@ impl Node {
             resources_at: None,
             identity_mismatch: false,
             cpu_history: History::default(),
+            throughput: Throughput::default(),
             mem_history: History::default(),
             slots_history: History::default(),
         }
@@ -341,6 +345,55 @@ pub enum ConnectionState {
         /// When the connection task will try again.
         retry_at: Instant,
     },
+}
+
+/// Compile throughput measured from results, not estimated.
+///
+/// Every `MON_JOB_DONE` carries what the compiling node actually spent and
+/// produced, so a node's real rate can be had without anything installed on it.
+/// One job says almost nothing — on this cluster the same machine ran at 17,
+/// 114 and 284 KB per CPU-second on three consecutive files, because a
+/// template-heavy source grinds a long time for a small object and a plain one
+/// does not — so the figure is the *ratio of the sums*, never the mean of the
+/// ratios, and it is withheld until enough jobs have gone through to mean
+/// something.
+#[derive(Debug, Clone, Default)]
+pub struct Throughput {
+    samples: VecDeque<(u64, u32)>,
+    out_bytes: u64,
+    user_ms: u64,
+}
+
+/// Jobs kept. Enough to average out what a file happens to be, short enough
+/// that a node which has just started throttling shows it within a few seconds
+/// of work rather than a few minutes.
+const THROUGHPUT_SAMPLES: usize = 32;
+/// Below this the figure is noise, and noise presented as a measurement is
+/// worse than no measurement at all.
+const THROUGHPUT_MIN: usize = 5;
+
+impl Throughput {
+    fn push(&mut self, out_bytes: u64, user_ms: u32) {
+        if self.samples.len() == THROUGHPUT_SAMPLES {
+            if let Some((b, u)) = self.samples.pop_front() {
+                self.out_bytes -= b;
+                self.user_ms -= u64::from(u);
+            }
+        }
+        self.samples.push_back((out_bytes, user_ms));
+        self.out_bytes += out_bytes;
+        self.user_ms += u64::from(user_ms);
+    }
+
+    /// Bytes of compiled output per second of CPU time, over the kept jobs.
+    pub fn rate(&self) -> Option<f64> {
+        (self.samples.len() >= THROUGHPUT_MIN && self.user_ms > 0)
+            .then(|| self.out_bytes as f64 / (self.user_ms as f64 / 1000.0))
+    }
+
+    pub fn jobs_measured(&self) -> usize {
+        self.samples.len()
+    }
 }
 
 /// A stretch of work with no idle gap in it — one build, as far as a monitor
@@ -647,7 +700,7 @@ impl Cluster {
         let mut speeds: Vec<f64> = self
             .nodes
             .values()
-            .filter_map(|n| n.speed())
+            .filter_map(|n| n.throughput.rate())
             .collect();
         if speeds.is_empty() {
             return None;
@@ -660,12 +713,21 @@ impl Cluster {
     ///
     /// Answers "is one node significantly slower than the others?" without
     /// making the user compare numbers by eye. Needs at least three nodes with
-    /// a measured speed, or the median is not meaningful.
+    /// a measured rate, or the median is not meaningful — and the rate is the
+    /// measured one, so a node that is slow because it is throttling or because
+    /// somebody else is using it counts as slow, which the scheduler's own
+    /// estimate of the machine never would.
     pub fn is_slow_outlier(&self, node: &Node) -> bool {
-        if self.nodes.values().filter(|n| n.speed().is_some()).count() < 3 {
+        if self
+            .nodes
+            .values()
+            .filter(|n| n.throughput.rate().is_some())
+            .count()
+            < 3
+        {
             return false;
         }
-        match (node.speed(), self.median_speed()) {
+        match (node.throughput.rate(), self.median_speed()) {
             (Some(speed), Some(median)) if median > 0.0 => speed < median * SLOW_OUTLIER_FRACTION,
             _ => false,
         }
@@ -862,6 +924,14 @@ impl Cluster {
                 }
                 if done.exit_code != 0 {
                     self.totals.failed += 1;
+                }
+                // Only successful jobs measure anything: a compile that failed
+                // stopped when the error was found, which is not how long the
+                // file takes.
+                if done.exit_code == 0 && done.user_msec > 0 {
+                    if let Some(node) = job.host_id.and_then(|id| self.nodes.get_mut(&id)) {
+                        node.throughput.push(u64::from(done.out_uncompressed), done.user_msec);
+                    }
                 }
             }
             None => {
@@ -1066,6 +1136,81 @@ mod tests {
         c.apply(stats(1, &node_blob("build01", 8)));
         c.apply(stats(2, &node_blob("build02", 4)));
         c
+    }
+
+    #[test]
+    fn throughput_is_the_ratio_of_sums_not_the_mean_of_ratios() {
+        // Measured on this cluster: the same machine ran at 17, 114 and 284 KB
+        // per CPU-second on three consecutive files, because what a file is
+        // decides how much object a CPU-second buys. Averaging those three
+        // ratios describes the files. Dividing the totals describes the node.
+        let mut t = Throughput::default();
+        for (bytes, ms) in [(7_776u64, 451u32), (139_104, 1_188), (8_728, 30), (55_016, 589)] {
+            t.push(bytes, ms);
+        }
+        t.push(100_000, 1_000);
+        let rate = t.rate().expect("five jobs is enough to speak");
+        let total_bytes = 7_776 + 139_104 + 8_728 + 55_016 + 100_000;
+        let total_secs = (451 + 1_188 + 30 + 589 + 1_000) as f64 / 1000.0;
+        assert!((rate - total_bytes as f64 / total_secs).abs() < 1.0);
+
+        let mean_of_ratios = [(7_776.0, 0.451), (139_104.0, 1.188), (8_728.0, 0.030),
+                              (55_016.0, 0.589), (100_000.0, 1.0)]
+            .iter()
+            .map(|(b, s): &(f64, f64)| b / s)
+            .sum::<f64>()
+            / 5.0;
+        // On these five jobs the mean of the ratios overstates the node by
+        // about thirty per cent — one 30 ms job that happened to emit a lot of
+        // object counts as much as a job a hundred times its length.
+        assert!(
+            mean_of_ratios > rate * 1.2,
+            "mean of ratios {mean_of_ratios:.0} vs ratio of sums {rate:.0}"
+        );
+    }
+
+    #[test]
+    fn a_rate_is_withheld_until_it_means_something() {
+        let mut t = Throughput::default();
+        for _ in 0..4 {
+            t.push(100_000, 1_000);
+            assert!(t.rate().is_none(), "four jobs is still noise");
+        }
+        t.push(100_000, 1_000);
+        assert!(t.rate().is_some(), "five is the point it starts speaking");
+
+        // And it forgets, so a node that slows down says so rather than being
+        // averaged against an hour of when it was fast.
+        for _ in 0..THROUGHPUT_SAMPLES {
+            t.push(10_000, 1_000);
+        }
+        assert_eq!(t.jobs_measured(), THROUGHPUT_SAMPLES);
+        assert!(
+            (t.rate().unwrap() - 10_000.0).abs() < 1.0,
+            "the fast jobs should have aged out: {:?}",
+            t.rate()
+        );
+    }
+
+    #[test]
+    fn a_failed_compile_does_not_count_as_speed() {
+        // It stopped when the error was found, which is not how long the file
+        // takes — and a node hitting errors fast would look like the quickest
+        // machine in the cluster.
+        let mut c = cluster_with_two_nodes();
+        for job_id in 0..8u32 {
+            c.apply(get_cs(job_id, 1));
+            c.apply(job_begin(job_id, 1));
+            c.apply(Update::Event(Event::JobDone(JobDone {
+                job_id,
+                exit_code: 1,
+                user_msec: 10,
+                out_uncompressed: 100_000,
+                ..Default::default()
+            })));
+        }
+        assert!(c.nodes[&1].throughput.rate().is_none(), "nothing measured");
+        assert_eq!(c.totals.failed, 8);
     }
 
     #[test]

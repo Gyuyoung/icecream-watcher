@@ -320,14 +320,29 @@ fn node_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
     out
 }
 
+/// Load averages, and what they are a load *of* where that is known.
+///
+/// This is where the figure belongs rather than in the overview: a load average
+/// is absolute, so 8.3 is a saturated eight-core machine and a bored
+/// sixty-four-core one, and a column of them invites exactly the comparison
+/// that cannot be made. Here there is room to divide it by the cores the agent
+/// reports, and to say so.
 fn load_averages(node: &Node) -> String {
     let stats = &node.stats;
-    match (stats.load_avg_1, stats.load_avg_5, stats.load_avg_10) {
-        (Some(one), Some(five), Some(ten)) => {
-            format!("{one:.2}  {five:.2}  {ten:.2}   (1 / 5 / 10 min)")
+    let (Some(one), Some(five), Some(ten)) =
+        (stats.load_avg_1, stats.load_avg_5, stats.load_avg_10)
+    else {
+        return UNKNOWN.to_owned();
+    };
+    let scale = match node.cores() {
+        Some(cores) if cores > 0 => {
+            format!("   ({:.2} per core, over {cores})", one / cores as f64)
         }
-        _ => UNKNOWN.to_owned(),
-    }
+        // No agent, so no core count: the figure stands unqualified rather than
+        // being divided by a number nobody sent.
+        _ => String::new(),
+    };
+    format!("{one:.2}  {five:.2}  {ten:.2}   (1 / 5 / 10 min){scale}")
 }
 
 /// `FreeMem`, which the protocol documents as MiB but not every daemon sends
