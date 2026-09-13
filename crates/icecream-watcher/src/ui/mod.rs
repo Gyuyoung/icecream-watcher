@@ -716,11 +716,16 @@ fn band_value(text: String) -> Span<'static> {
     Span::raw(format!("{text:<BAND_VALUE_WIDTH$}"))
 }
 
+/// The name of a band series, in the column before its figure.
+///
+/// Bright, not `DarkGray`: these three words are how the band is navigated —
+/// which row am I reading — and at colour 8 on a painted black they were the
+/// dimmest text on the screen, dimmer than the notes underneath them.
 fn label(text: &str) -> Span<'static> {
     Span::styled(
         format!("{text:<7}"),
         Style::default()
-            .fg(Color::DarkGray)
+            .fg(widgets::foreground())
             .add_modifier(Modifier::BOLD),
     )
 }
