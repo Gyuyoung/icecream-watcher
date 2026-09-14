@@ -111,6 +111,8 @@ pub struct Node {
     pub slots_history: History,
     /// What this node's finished jobs say about how fast it actually is.
     pub throughput: Throughput,
+    /// How many files it is finishing per second.
+    pub completions: Completions,
 }
 
 impl Node {
@@ -130,6 +132,7 @@ impl Node {
             identity_mismatch: false,
             cpu_history: History::default(),
             throughput: Throughput::default(),
+            completions: Completions::default(),
             mem_history: History::default(),
             slots_history: History::default(),
         }
@@ -345,6 +348,54 @@ pub enum ConnectionState {
         /// When the connection task will try again.
         retry_at: Instant,
     },
+}
+
+/// Files finished per second, over a short window.
+///
+/// The figure the screen leads with, because it is the one nobody has to be
+/// told how to read: a node doing 5/s is doing five files a second, and the
+/// nodes' figures add up to the cluster rate in the band above them, so the
+/// whole column can be checked by eye.
+///
+/// It measures **contribution, not speed**: a thirty-two slot machine chewing
+/// easy files beats a fast twelve-slot one on hard ones, and an idle node reads
+/// zero however quick it is. What one file costs on a node is in the detail
+/// view, where there is room to say which of the two is being looked at.
+#[derive(Debug, Clone, Default)]
+pub struct Completions {
+    /// Finished jobs per tick, newest last.
+    per_tick: VecDeque<u32>,
+    /// Total at the previous tick, to turn a counter into a rate.
+    total_at_last_tick: u64,
+    /// Jobs this node has finished since connect.
+    pub total: u64,
+}
+
+/// Ticks kept, at one tick a second. Long enough that a node finishing a job
+/// every few seconds still reads as busy rather than blinking between 0 and 1,
+/// short enough to follow a build that changes what it is doing.
+const COMPLETION_WINDOW: usize = 10;
+
+impl Completions {
+    fn tick(&mut self) {
+        let done = self.total.saturating_sub(self.total_at_last_tick);
+        self.total_at_last_tick = self.total;
+        if self.per_tick.len() == COMPLETION_WINDOW {
+            self.per_tick.pop_front();
+        }
+        self.per_tick.push_back(done as u32);
+    }
+
+    /// Files per second across the ticks so far.
+    ///
+    /// No minimum and no `None`: a node that has finished nothing is finishing
+    /// nothing, which is an answer rather than a gap. Divided by the ticks
+    /// actually seen, so a monitor thirty seconds old is not reporting a rate
+    /// averaged over ten seconds it was not there for.
+    pub fn per_second(&self) -> Option<f64> {
+        let ticks = self.per_tick.len();
+        (ticks > 0).then(|| self.per_tick.iter().map(|n| f64::from(*n)).sum::<f64>() / ticks as f64)
+    }
 }
 
 /// Compile throughput measured from results, not estimated.
@@ -610,6 +661,10 @@ impl Cluster {
         let done_this_tick = completed.saturating_sub(self.last_completed);
         self.last_completed = completed;
         self.rate_history.push(Some(done_this_tick as f32));
+
+        for node in self.nodes.values_mut() {
+            node.completions.tick();
+        }
 
         self.track_build(&summary, completed);
 
@@ -946,8 +1001,12 @@ impl Cluster {
                 // Only successful jobs measure anything: a compile that failed
                 // stopped when the error was found, which is not how long the
                 // file takes.
-                if done.exit_code == 0 && done.user_msec > 0 {
-                    if let Some(node) = job.host_id.and_then(|id| self.nodes.get_mut(&id)) {
+                if let Some(node) = job.host_id.and_then(|id| self.nodes.get_mut(&id)) {
+                    // Every finished job counts towards the rate, including the
+                    // failed ones: the node did the work either way, and a
+                    // build full of errors is still a busy cluster.
+                    node.completions.total += 1;
+                    if done.exit_code == 0 && done.user_msec > 0 {
                         node.throughput.push(u64::from(done.out_uncompressed), done.user_msec);
                     }
                 }

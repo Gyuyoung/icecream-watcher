@@ -475,8 +475,11 @@ fn slots_block(
     rows: usize,
 ) -> Vec<Line<'static>> {
     let pct = summary.slot_usage();
+    // "Total" over "Jobs", down the label column: the figure beside it is the
+    // whole cluster's occupancy, and the one word that says so does not fit in
+    // the seven cells a label gets.
     let mut head = vec![
-        label("Jobs"),
+        label("Total"),
         band_value(format!("{}/{}", summary.used_slots, summary.total_slots)),
     ];
     match pct {
@@ -493,10 +496,13 @@ fn slots_block(
     // every cycle while the same machine is still in the list — "3 online ·
     // 2 left" read as five nodes with two missing when there were only ever
     // three. What is wrong with a node that *is* here shows on its own row.
-    let health = vec![Span::styled(
-        format!("{:<7}{} online", "", summary.nodes_online),
-        Style::default().fg(secondary()),
-    )];
+    let health = vec![
+        label("Jobs"),
+        Span::styled(
+            format!("{} online", summary.nodes_online),
+            Style::default().fg(secondary()),
+        ),
+    ];
 
     // Utilisation has a real maximum, so the gradient by height means what it
     // means on the bars: near the top is the part worth worrying about.
@@ -742,11 +748,11 @@ struct Columns {
     /// Slots in use and slots configured, as plain numbers.
     cur_max: bool,
     slot_bar: usize,
-    /// `Receive` / `Send`: work compiled here for the cluster, and work
-    /// submitted from here.
+    /// `Send` / `Receive`: work submitted from here, and work compiled here
+    /// for the cluster.
     jobs: bool,
-    /// Measured throughput against the cluster median.
-    perf: bool,
+    /// Files finished per second.
+    rate: bool,
     /// Width of the trailing column of filenames, 0 to drop it.
     files: usize,
 }
@@ -769,7 +775,7 @@ fn columns(width: u16, longest_name: usize) -> Columns {
             // finer than the eye, and four columns back for the filenames.
             slot_bar: 12,
             jobs: true,
-            perf: true,
+            rate: true,
             files: 0,
         },
         w if w >= 92 => Columns {
@@ -777,7 +783,7 @@ fn columns(width: u16, longest_name: usize) -> Columns {
             cur_max: true,
             slot_bar: 12,
             jobs: true,
-            perf: true,
+            rate: true,
             files: 0,
         },
         w if w >= 76 => Columns {
@@ -785,7 +791,7 @@ fn columns(width: u16, longest_name: usize) -> Columns {
             cur_max: true,
             slot_bar: 10,
             jobs: false,
-            perf: true,
+            rate: true,
             files: 0,
         },
         w if w >= 60 => Columns {
@@ -793,7 +799,7 @@ fn columns(width: u16, longest_name: usize) -> Columns {
             cur_max: true,
             slot_bar: 8,
             jobs: false,
-            perf: true,
+            rate: true,
             files: 0,
         },
         _ => Columns {
@@ -801,7 +807,7 @@ fn columns(width: u16, longest_name: usize) -> Columns {
             cur_max: false,
             slot_bar: 6,
             jobs: false,
-            perf: false,
+            rate: false,
             files: 0,
         },
     };
@@ -810,7 +816,7 @@ fn columns(width: u16, longest_name: usize) -> Columns {
         + cols.slot_bar
         + if cols.cur_max { (COUNT_WIDTH as usize + 1) * 2 } else { 0 }
         + if cols.jobs { (JOBS_WIDTH as usize + 1) * 2 } else { 0 }
-        + if cols.perf { PERF_WIDTH as usize + 1 } else { 0 };
+        + if cols.rate { RATE_WIDTH as usize + 1 } else { 0 };
     // Two for the borders, one for the column gap before the filenames, and a
     // little slack so a name never collides with the right-hand border.
     let mut spare = (width as usize).saturating_sub(fixed + 6);
@@ -840,12 +846,10 @@ fn columns(width: u16, longest_name: usize) -> Columns {
 /// Width of the `Max` and `Active` job-count columns.
 const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 7;
-/// Wider than the figure it holds. `Perf` is the first column after `Send`,
-/// and right-aligned figures in adjacent columns otherwise meet across a single
-/// cell of column spacing, which reads as one number with a gap in it. The last
-/// cell is where the `!` on a slow node goes, so the mark never sits against
-/// the next column.
-const PERF_WIDTH: u16 = 7;
+/// Sized by its heading rather than its figures: `Files/sec` is nine cells and
+/// `12.4` is four. The heading is what makes the column readable without the
+/// help overlay, so the figures carry no unit and the column carries the air.
+const RATE_WIDTH: u16 = 10;
 /// Below this a filename is elided to the point of saying nothing, so the
 /// column is not worth its space.
 const MIN_FILES: usize = 14;
@@ -888,22 +892,20 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.jobs {
         header.push(Cell::from(format!(
             "{:>width$}",
-            "Receive",
+            "Send",
             width = JOBS_WIDTH as usize
         )));
         header.push(Cell::from(format!(
             "{:>width$}",
-            "Send",
+            "Receive",
             width = JOBS_WIDTH as usize
         )));
     }
-    if cols.perf {
-        // One trailing cell, which is where a `!` goes on a slow node — so the
-        // heading sits over the figures rather than over the marks beside them.
+    if cols.rate {
         header.push(Cell::from(format!(
             "{:>width$} ",
-            "Perf",
-            width = PERF_WIDTH as usize - 1
+            "Files/sec",
+            width = RATE_WIDTH as usize - 1
         )));
     }
     if cols.files > 0 {
@@ -926,8 +928,8 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         constraints.push(Constraint::Length(JOBS_WIDTH));
         constraints.push(Constraint::Length(JOBS_WIDTH));
     }
-    if cols.perf {
-        constraints.push(Constraint::Length(PERF_WIDTH));
+    if cols.rate {
+        constraints.push(Constraint::Length(RATE_WIDTH));
     }
     if cols.files > 0 {
         constraints.push(Constraint::Length(cols.files as u16));
@@ -989,11 +991,13 @@ fn node_row<'a>(
 
     if cols.jobs {
         let w = JOBS_WIDTH as usize;
-        cells.push(Cell::from(count_cell(node.jobs_in, w)));
+        // Send before Receive: what a node asked the cluster for reads first,
+        // then what it did for the cluster in return.
         cells.push(Cell::from(count_cell(node.jobs_out, w)));
+        cells.push(Cell::from(count_cell(node.jobs_in, w)));
     }
-    if cols.perf {
-        cells.push(Cell::from(perf_cell(node, cluster)));
+    if cols.rate {
+        cells.push(Cell::from(rate_cell(node)));
     }
     if cols.files > 0 {
         cells.push(Cell::from(files_cell(node, cluster, cols.files)));
@@ -1239,54 +1243,39 @@ fn slot_colour(node: &Node) -> Color {
 const SLOT_BASELINE: Color = Color::Rgb(120, 120, 120);
 
 
-/// How fast this node is actually compiling, against the cluster median.
+/// How many files a second this node is finishing.
 ///
-/// One column in place of `Load` and `Speed`, which between them asked the
-/// reader to hold two numbers in mind and know what each meant. `Load` was a
-/// raw load average — 8.3 is saturated on an eight-core machine and idle on a
-/// sixty-four-core one, and the column never said which it was looking at —
-/// and `Speed` was the scheduler's *estimate* of the machine, which does not
-/// change when the machine starts throttling or somebody else starts using it.
+/// The column was a ratio of measured throughput to the median of the node's
+/// platform, and it was read twice as something it was not. This is the figure
+/// nobody has to be told how to read, and the column adds up to the cluster
+/// rate in the band above it, so it can be checked by eye.
 ///
-/// This is measured, from what finished jobs report: a multiple of what the
-/// middle node **of its own platform** is managing, so `0.4×` means two and a
-/// half times slower than its peers and needs no unit to read. Per platform
-/// because icecream only sends a job to a node whose environment matches, so
-/// nodes of different platforms are compiling different builds and the ratio
-/// between them measures nothing. A node with too few jobs behind it, or with
-/// no peer to be compared against, shows `—` rather than a figure nobody
-/// should act on.
-fn perf_cell<'a>(node: &Node, cluster: &Cluster) -> Line<'a> {
-    let figure_width = PERF_WIDTH as usize - 1;
-    let (Some(rate), Some(median)) = (
-        node.throughput.rate(),
-        cluster.median_rate_among_peers(node),
-    ) else {
-        return dim(format!("{UNKNOWN:>figure_width$}"));
+/// It says **how much of the work this node is doing**, not how fast the
+/// machine is: thirty-two slots of easy files beats twelve slots of hard ones,
+/// and a node nobody is sending work to reads zero however quick it is. What
+/// one file costs on a node is in the detail view, which has room to say which
+/// of the two it is showing.
+fn rate_cell<'a>(node: &Node) -> Line<'a> {
+    let width = RATE_WIDTH as usize - 1;
+    let Some(rate) = node.completions.per_second() else {
+        return dim(format!("{UNKNOWN:>width$}"));
     };
-    if median <= 0.0 {
-        return dim(format!("{UNKNOWN:>figure_width$}"));
+    // Zero is an answer, not a gap, but it is a quiet one: a cluster is mostly
+    // nodes waiting, and a column of bright noughts would bury the busy rows.
+    if rate == 0.0 {
+        return dim(format!("{:>width$}", "0"));
     }
-
-    let slow = cluster.is_slow_outlier(node);
-    let ratio = rate / median;
-    let mut spans = vec![Span::styled(
-        format!("{ratio:>width$.1}\u{d7}", width = figure_width - 1),
-        if slow {
-            Style::default().fg(Color::LightRed)
-        } else {
-            Style::default().fg(secondary())
-        },
-    )];
-    if slow {
-        spans.push(Span::styled(
-            "!",
-            Style::default()
-                .fg(Color::LightRed)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-    Line::from(spans)
+    // One decimal below ten, none above: "12.4" and "0.4" are both worth the
+    // character, "124.0" is not. The unit is in the heading.
+    let text = if rate < 10.0 {
+        format!("{rate:.1}")
+    } else {
+        format!("{rate:.0}")
+    };
+    Line::from(Span::styled(
+        format!("{text:>width$}"),
+        Style::default().fg(widgets::foreground()),
+    ))
 }
 
 fn dim<'a>(text: String) -> Line<'a> {
@@ -1425,8 +1414,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
         Line::from("  Send         jobs submitted from here; blank means a pure server"),
-        Line::from("  Perf         measured speed against the middle node of its own"),
-        Line::from("               platform; 0.4x is two and a half times slower"),
+        Line::from("  Files/sec    files this node is finishing, over ten seconds;"),
+        Line::from("               the column adds up to Rate in the band above"),
         Line::from("  —            not measured, or not reported by this node"),
         Line::from("  blank count  none, which is different from — : the answer is known"),
         Line::from("  !            what is limiting this node, or a slow outlier"),
@@ -1703,7 +1692,9 @@ mod tests {
     /// What a named row holds under a named column heading.
     fn column_of(out: &str, row_name: &str, heading: &str) -> String {
         let header = out.lines().find(|l| l.contains("Node")).expect("header");
-        let at = header[..header.find(heading).expect("heading")]
+        // Last match, not first: `Files` is also the tail of `Files/sec`, the
+        // column beside it.
+        let at = header[..header.rfind(heading).expect("heading")]
             .chars()
             .count();
         row_for(out, row_name).chars().skip(at).collect()
@@ -2245,7 +2236,7 @@ mod tests {
             .lines()
             .find(|l| l.contains("Node"))
             .expect("header row");
-        for icecream in ["Max", "Active", "Jobs", "Receive", "Send", "Perf"] {
+        for icecream in ["Max", "Active", "Jobs", "Receive", "Send", "Files/sec"] {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
@@ -2322,17 +2313,19 @@ mod tests {
     }
 
     #[test]
-    fn a_slow_node_is_flagged_against_the_cluster_median() {
+    fn a_slow_node_is_flagged_against_its_peers() {
+        // The mark moved to the detail view with the ratio it belongs to: the
+        // overview's column is now files a second, which is contribution, and a
+        // node doing little of the work is not necessarily a slow one.
         let mut app = busy_cluster();
-        // Same work on all three, and build02 taking four times the CPU for it.
         compiled(&mut app, 1, 8, 100_000, 500);
         compiled(&mut app, 3, 8, 100_000, 500);
         compiled(&mut app, 2, 8, 100_000, 2_000);
-        let out = render(&app, 130, 24);
         assert!(
-            row_for(&out, "build02").contains('!'),
-            "a slow outlier should be marked: {out}"
+            app.cluster.is_slow_outlier(&app.cluster.nodes[&2]),
+            "four times the CPU for the same output is an outlier"
         );
+        assert!(!app.cluster.is_slow_outlier(&app.cluster.nodes[&1]));
     }
 
     #[test]
@@ -2477,16 +2470,16 @@ mod tests {
         };
 
         let wide = header_of(130);
-        assert!(wide.contains("Send") && wide.contains("Perf"), "{wide}");
+        assert!(wide.contains("Send") && wide.contains("Files/sec"), "{wide}");
 
         // Job counters go first: they are a tally, and a tally is the easiest
         // thing to read one column to the right in the detail view.
         let medium = header_of(80);
         assert!(!medium.contains("Send"), "{medium}");
-        assert!(medium.contains("Perf"), "{medium}");
+        assert!(medium.contains("Files/sec"), "{medium}");
 
         let tiny = header_of(50);
-        assert!(!tiny.contains("Perf"), "{tiny}");
+        assert!(!tiny.contains("Files/sec"), "{tiny}");
         // Slots survive every width, because they are the point.
         assert!(tiny.contains("Jobs"), "{tiny}");
         assert!(

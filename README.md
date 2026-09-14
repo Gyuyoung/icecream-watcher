@@ -12,8 +12,8 @@ honest when the cluster or the network misbehaves. See
 ```
 icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 00:00:00   sort name   [?] help
 ┌ ICECREAM CLUSTER ──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Jobs   38/88      43%                     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
-│       7 online                           ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│Total  38/88      43%                     ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│Jobs   7 online                           ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
 │                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
 │                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
 │                                          ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
@@ -29,37 +29,36 @@ icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 
 │       peak 40/s · building for 0s        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ NODES  7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Node                        Max Active Jobs         Receive    Send   Perf  Files                                   │
-│+ build01                    16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      23      48   1.0×  …rt_card/smart_card.mojom-blink.cc +14  │
-│+ build02                    16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀      18           1.0×  …web_sensor_provider.mojom-blink.cc +9  │
-│+ build03                    16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀      16           1.0×  …ebaudio/audio_worklet_processor.cc +7  │
-│+ build04                    16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀      12       9   0.3×! …ebaudio/audio_worklet_processor.cc +3  │
-│+ build05                     8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       8           1.0×                                          │
-│+ build07                    16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀              10      —                                          │
-│+ laptop local               12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀       1      11      —  …r/core/css/resolver/style_resolver.cc  │
+│Node                        Max Active Jobs            Send Receive Files/sec  Files                                │
+│+ build01                    16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      48      23         0  …card/smart_card.mojom-blink.cc +14  │
+│+ build02                    16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀              18         0  …_sensor_provider.mojom-blink.cc +9  │
+│+ build03                    16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀              16         0  …udio/audio_worklet_processor.cc +7  │
+│+ build04                    16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀       9      12         0  …udio/audio_worklet_processor.cc +3  │
+│+ build05                     8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀               8         0                                       │
+│+ build07                    16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      10                 0                                       │
+│+ laptop local               12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      11       1         0  …ore/css/resolver/style_resolver.cc  │
 │                                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 q quit  ↑↓/jk select  Enter detail  s sort  n i p by name/jobs/perf  ? help   selected build02
 ```
 
 Reading it: every column is an **Icecream** figure — compile slots, jobs
-compiled here (`Receive`) and submitted from here (`Send`), measured
-performance, and the file each node is working on. A node whose `Send` is empty
+submitted from here (`Send`) and compiled here for the cluster (`Receive`),
+files finished per second, and the file each node is working on. A node whose `Send` is empty
 is a pure compile server: it takes work and sends none. Across a cluster the
 `Receive` figures sum to the `Send` figures, so a mismatch means an attribution
 was lost, not that a node is idle.
 
 **A zero counter is blank, and `—` means unknown.** They are different facts and
 this table shows both on the same row: an empty `Send` says the answer is known
-and it is none, while `Perf —` says there is not yet enough measured to show.
+and it is none, while a `—` says there is no figure to show at all.
 The name column is sized to the cluster rather than to a fixed maximum, so
 nothing is padded out with cells that nothing fills.
 A machine's CPU, memory and temperature are its own business and belong in the
-detail view. `build04` is a slow outlier and the `!` beside its `Perf` says so:
-at `0.3×` it is producing a third of what the middle node of its own platform
-produces per second of CPU. `build05` and `build07` have not finished enough
-jobs on this connection for the figure to mean anything, so they say `—` rather
-than guess. Nothing on this screen needs an agent on the nodes.
+detail view, which also holds how fast one file is on a node and how that
+compares with its peers. `build05` and `build07` are finishing nothing because
+nothing is being sent to them, which the `0` says and the empty meter beside it
+confirms. Nothing on this screen needs an agent on the nodes.
 
 **A node that goes offline leaves the list**, and comes back by itself when its
 daemon reattaches. Host ids are per *connection* — the scheduler issues a new one
@@ -228,8 +227,8 @@ notes. `icecream-watcher` finds agents by itself — it polls each node at the a
 scheduler reports, so there is nothing to configure per node.
 
 **The agent is optional and the overview does not need it.** Every column on the
-main screen comes from the scheduler, including `Perf`, which is computed from
-what finished jobs report rather than from anything installed on the node. What
+main screen comes from the scheduler, including `Files/sec`, which is counted
+from finished jobs rather than from anything installed on the node. What
 an agent adds is the machine's own side of the story — why a node is slow, not
 just that it is — and it appears in the detail view. A node without one shows
 `no agent here` there and is otherwise unaffected. `--no-agents` turns polling
@@ -265,27 +264,19 @@ its node through a re-sort.
 ## Reading the screen
 
 - `—` and `····` mean **not measured**, never zero. A node that has compiled
-  nothing yet reads `—` on `Perf`; one that has compiled slowly reads a small
-  multiple. The two must not look the same.
-- `!` on `Perf` marks a node well below the cluster median.
+  nothing yet reads `0` on `Files/sec`, which is measured; a figure that does
+  not exist at all reads `—`. The two must not look the same.
+- `!` marks a node well below its platform's median in the detail view.
 - **Dim rows are idle.** Offline rows strike through and sink to the bottom.
 - **`Jobs`** is remote compiles running as a fraction of slots offered. Local
   compiles occupy no scheduler slot and are counted separately.
-- **`Perf`** is measured, not estimated: bytes of compiled output per second of
-  CPU time, as a multiple of what the middle node **of its own platform**
-  manages. Per platform because icecream only sends a job to a node whose
-  environment matches it, so a `Darwin25_arm64` node is compiling the macOS
-  build while the `x86_64` nodes compile the Linux one — measured on a live
-  four-node cluster, the macOS node read `3.8×` the cluster-wide median while
-  running jobs a tenth the length of the others, and pushed all three Linux
-  nodes below `1.0×` in the process. A node with no peer on its platform shows
-  `—`, because one node is its own median. It comes
-  from what finished jobs report, so it needs nothing installed on the nodes,
-  and it is the ratio of the sums rather than the mean of the ratios — one job
-  says almost nothing, because what a file *is* decides how much object a
-  CPU-second buys. Under five finished jobs it shows `—` rather than a figure
-  nobody should act on, and failed compiles are not counted: one that stopped at
-  the first error would make a node look like the fastest in the cluster.
+- **`Files/sec`** is what it says: files this node finished per second, averaged
+  over the last ten seconds. The column adds up to `Rate` in the band above it,
+  so it can be checked by eye. It measures **contribution, not speed** — a
+  thirty-two slot machine chewing easy files beats a fast twelve-slot one on
+  hard ones, and a node nobody is sending work to reads `0` however quick it is.
+  What one file costs on a node, and how that compares with its peers on the
+  same platform, is in the detail view.
 - The **`Queue`** and **`Rate`** graphs are scaled to their own peak — a queue has
   no natural maximum — and the peak is printed next to them so a flat graph at
   full height cannot be mistaken for a queue at some limit.
