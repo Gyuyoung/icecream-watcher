@@ -52,19 +52,30 @@ fn secondary() -> Color {
 
 /// Text that names a column or a series, rather than being one.
 ///
-/// The node table's accent at full strength. White is the brightest thing a
-/// terminal has, but it is also what every figure on this screen is already
-/// painted in, so a white heading is only as findable as the numbers under it —
-/// the eye has to read the row to know it is a heading. A hue nothing else on
-/// the screen wears is found without reading, and this one carries more
-/// luminance than the grey the table's headings used to be drawn in, which is
-/// the readability the brightness was standing in for.
+/// White is the brightest thing a terminal has, but it is also what every
+/// figure on this screen is already painted in, so a white heading is only as
+/// findable as the numbers under it — the eye has to read the row to know it is
+/// a heading. A hue nothing else here wears is found without reading.
 ///
-/// The frame around those headings is the same hue at [`FRAME_WEIGHT`], so the
-/// box keeps its identity without the border and the words being one colour.
+/// This was the node table's own cyan for a while, which is the one hue it
+/// could not be: a heading sits *inside* that box's frame, and a long
+/// continuous run of border glyphs in the same colour is what the words then
+/// disappear into. Pink replaced it and was no better — `#ff79c6` is 87 apart
+/// from the band's purple frame, which is the same mistake one box over.
+///
+/// So this was searched for rather than picked, maximising distance from the
+/// four things a heading could be confused with — the two frames it sits inside
+/// and the other text on the screen, the white figures and the grey notes —
+/// under a luminance floor of 155, the same floor the node names are held to.
+/// Mint comes out furthest: 188 from the purple frame, 131 from the cyan one,
+/// 208 from white and 123 from the grey.
+///
+/// Green does mean "healthy" in the load ramp, and the nearest ramp stop is 95
+/// away — a deeper, darker green than this. A heading is chrome in a fixed
+/// position that never changes, so unlike a bar it cannot be misread as a
+/// reading that moved.
 fn heading() -> Color {
-    let (r, g, b) = TABLE_ACCENT;
-    widgets::rgb(r, g, b)
+    widgets::rgb(0x55, 0xff, 0x88)
 }
 
 /// Shown when a metric is not available. Distinct from `0`.
@@ -314,42 +325,26 @@ const SERIES_ROWS_LARGE: usize = 3;
 /// drew a line that competed with the band's own border.
 const SEPARATOR_COLOUR: Color = Color::Rgb(64, 64, 64);
 
-/// Each area's accent colour, the way `btop` gives every box one: two outlines
-/// in the same white read as one panel with a line through it, where two hues
-/// say "these are different questions" before either is read.
+/// Each area's frame gets its own colour, the way `btop` gives every box one:
+/// two outlines in the same white read as one panel with a line through it,
+/// where two hues say "these are different questions" before either is read.
 ///
 /// Taken from btop's Dracula theme, which is where this borrowed the idea:
 /// its CPU box — the meters and graphs at the top, which is what the band is —
 /// is purple, and its process box, the list underneath, is cyan. Its red is the
 /// network box, and red here would read as an alarm rather than as a frame.
-const BAND_ACCENT: (u8, u8, u8) = (0xbd, 0x93, 0xf9);
-const TABLE_ACCENT: (u8, u8, u8) = (0x8b, 0xe9, 0xfd);
-
-/// How much of its accent a frame is drawn at.
 ///
-/// The frames were drawn at the full accent, and the node table's headings are
-/// drawn in that same accent, sitting directly inside it — the same colour on
-/// the border and on the words, which made the headings hard to pick out of
-/// their own box. This is how btop avoids that and the reason its boxes read
-/// the way they do: the outline is a long, continuous, low-contrast run of
-/// glyphs that only has to say where the box ends, and the text inside it is
-/// the thing being read. Dimming the line rather than re-hueing the words keeps
-/// each box's identity — the band is still purple, the table still cyan — and
-/// spends the contrast on what is there to be read.
-const FRAME_WEIGHT: f32 = 0.5;
-
-fn frame(accent: (u8, u8, u8)) -> Color {
-    let scale = |v: u8| (f32::from(v) * FRAME_WEIGHT).round() as u8;
-    let (r, g, b) = accent;
-    widgets::rgb(scale(r), scale(g), scale(b))
-}
-
+/// Both go on at full strength. They were briefly dimmed, to keep the node
+/// table's headings — then drawn in this same cyan — from disappearing into
+/// the line that framed them. That was the wrong end of the problem: the frames
+/// are what was asked for, and it was the heading that had no business wearing
+/// a colour already spoken for. See [`heading`].
 fn band_border() -> Color {
-    frame(BAND_ACCENT)
+    widgets::rgb(0xbd, 0x93, 0xf9)
 }
 
 fn table_border() -> Color {
-    frame(TABLE_ACCENT)
+    widgets::rgb(0x8b, 0xe9, 0xfd)
 }
 
 /// Rows spent dividing the three series. Two braille fields that touch read as
@@ -2778,29 +2773,37 @@ mod tests {
 
     #[test]
     fn a_frame_is_never_the_colour_of_the_text_inside_it() {
-        // The headings and the node table's border are the same hue on purpose
-        // — that is what makes the box one thing — but drawn at the same
-        // strength the border competed with the words it was framing.
-        assert_ne!(table_border(), heading(), "the table's frame and headings");
-        assert_ne!(band_border(), heading(), "the band's frame and its labels");
-
+        // A heading drawn in its own box's colour is the thing that was hard to
+        // read: the border is a long continuous run of one glyph, and the words
+        // it frames disappear into it. Moving the heading to pink only carried
+        // the mistake one box over, onto the band's purple frame — so both
+        // frames are checked, not the one that was complained about.
         let rgb = |c: Color| match c {
             Color::Rgb(r, g, b) => (f32::from(r), f32::from(g), f32::from(b)),
             other => panic!("expected a true colour, got {other:?}"),
         };
-        let luminance = |c: Color| {
-            let (r, g, b) = rgb(c);
-            0.2126 * r + 0.7152 * g + 0.0722 * b
+        let distance = |a: Color, b: Color| {
+            let ((ar, ag, ab), (br, bg, bb)) = (rgb(a), rgb(b));
+            ((ar - br).powi(2) + (ag - bg).powi(2) + (ab - bb).powi(2)).sqrt()
         };
-        // Comfortably apart, not merely unequal: a border one step darker is
-        // the same colour to anyone glancing at the box.
-        for frame in [table_border(), band_border()] {
-            let ratio = luminance(heading()) / luminance(frame).max(1.0);
-            assert!(
-                ratio >= 1.5,
-                "{frame:?} is only {ratio:.2}x dimmer than the text inside it"
-            );
+
+        // Far apart, not merely unequal: a colour one step off is the same
+        // colour to anyone glancing at a row.
+        for (what, other) in [
+            ("the band's frame", band_border()),
+            ("the table's frame", table_border()),
+            ("the figures", widgets::foreground()),
+            ("the notes", secondary()),
+        ] {
+            let apart = distance(heading(), other);
+            assert!(apart >= 120.0, "a heading is only {apart:.0} from {what}");
         }
+
+        // And still the same floor "readable on black" was settled at for the
+        // node names, which is the other text this screen is read through.
+        let (r, g, b) = rgb(heading());
+        let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        assert!(luminance >= 155.0, "a heading at luminance {luminance:.0}");
     }
 
     #[test]
