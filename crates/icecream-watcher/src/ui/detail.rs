@@ -141,7 +141,10 @@ fn jobs_lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>
 
     if running.is_empty() {
         out.push(Line::from(Span::styled(
-            format!("    no remote jobs running ({} slots free)", node.max_jobs()),
+            format!(
+                "    no remote jobs running ({} slots free)",
+                node.max_jobs()
+            ),
             Style::default().add_modifier(Modifier::DIM),
         )));
     } else {
@@ -163,7 +166,11 @@ fn jobs_lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>
             format!(
                 "    ({} job{} elsewhere finished that began before this monitor attached)",
                 cluster.totals.unmatched_done,
-                if cluster.totals.unmatched_done == 1 { "" } else { "s" }
+                if cluster.totals.unmatched_done == 1 {
+                    ""
+                } else {
+                    "s"
+                }
             ),
             Style::default().add_modifier(Modifier::DIM),
         )));
@@ -478,4 +485,3 @@ fn note(label: &str, detail: &str) -> Line<'static> {
         ),
     ])
 }
-

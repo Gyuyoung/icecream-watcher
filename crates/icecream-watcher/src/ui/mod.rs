@@ -30,9 +30,7 @@ pub mod widgets;
 
 use std::time::{Duration, Instant};
 
-use icecc_model::{
-    Cluster, ConnectionState, Job, JobState, Node, ResourceState, Summary, Trend,
-};
+use icecc_model::{Cluster, ConnectionState, Job, JobState, Node, ResourceState, Summary, Trend};
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -679,10 +677,7 @@ fn queue_line(cluster: &Cluster, summary: &Summary, bar_width: usize) -> Line<'s
         // The graph is scaled to its own peak, because a queue has no natural
         // maximum. Saying so is what stops a queue that has sat at seven for
         // the whole window from reading as "full".
-        Span::styled(
-            format!(" peak {peak:.0}"),
-            Style::default().fg(secondary()),
-        ),
+        Span::styled(format!(" peak {peak:.0}"), Style::default().fg(secondary())),
         Span::styled(
             format!(
                 "   {} remote · {} local",
@@ -825,9 +820,21 @@ fn columns(width: u16, longest_name: usize) -> Columns {
 
     let fixed = cols.name as usize
         + cols.slot_bar
-        + if cols.cur_max { (COUNT_WIDTH as usize + 1) * 2 } else { 0 }
-        + if cols.jobs { (JOBS_WIDTH as usize + 1) * 2 } else { 0 }
-        + if cols.rate { RATE_WIDTH as usize + 1 } else { 0 };
+        + if cols.cur_max {
+            (COUNT_WIDTH as usize + 1) * 2
+        } else {
+            0
+        }
+        + if cols.jobs {
+            (JOBS_WIDTH as usize + 1) * 2
+        } else {
+            0
+        }
+        + if cols.rate {
+            RATE_WIDTH as usize + 1
+        } else {
+            0
+        };
     // Two for the borders, one for the column gap before the filenames, and a
     // little slack so a name never collides with the right-hand border.
     let mut spare = (width as usize).saturating_sub(fixed + 6);
@@ -885,7 +892,6 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let cols = columns(area.width, longest_name);
     let stale_after = cluster.metrics_stale_after;
 
-
     let mut header = vec![Cell::from("Node")];
     if cols.cur_max {
         header.push(Cell::from(format!(
@@ -899,7 +905,11 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
             width = COUNT_WIDTH as usize
         )));
     }
-    header.push(Cell::from(format!("{:<width$}", "Jobs", width = cols.slot_bar)));
+    header.push(Cell::from(format!(
+        "{:<width$}",
+        "Jobs",
+        width = cols.slot_bar
+    )));
     if cols.jobs {
         header.push(Cell::from(format!(
             "{:>width$}",
@@ -1060,7 +1070,11 @@ fn files_cell<'a>(node: &Node, cluster: &Cluster, width: usize) -> Line<'a> {
         return Line::raw(String::new());
     };
 
-    let more = if others > 0 { format!(" +{others}") } else { String::new() };
+    let more = if others > 0 {
+        format!(" +{others}")
+    } else {
+        String::new()
+    };
     let room = width.saturating_sub(more.chars().count());
     let name = if job.filename.is_empty() {
         // `MON_JOB_BEGIN` without the `MON_GET_CS` that carries the name: the
@@ -1125,19 +1139,20 @@ const EXPAND_MARK: &str = "+ ";
 
 fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
     // At most one badge, in order of how much it should worry the reader.
-    let badge: Option<(String, Color)> = if matches!(node.resource_state, ResourceState::Error { .. }) {
-        Some(("agent?".to_owned(), Color::LightRed))
-    } else if node.identity_mismatch {
-        Some(("host?".to_owned(), Color::LightRed))
-    } else if node.suspect() {
-        Some(("no ack".to_owned(), Color::Yellow))
-    } else if stale {
-        Some(("stale".to_owned(), Color::Yellow))
-    } else if !node.accepts_remote() {
-        Some(("local".to_owned(), Color::DarkGray))
-    } else {
-        None
-    };
+    let badge: Option<(String, Color)> =
+        if matches!(node.resource_state, ResourceState::Error { .. }) {
+            Some(("agent?".to_owned(), Color::LightRed))
+        } else if node.identity_mismatch {
+            Some(("host?".to_owned(), Color::LightRed))
+        } else if node.suspect() {
+            Some(("no ack".to_owned(), Color::Yellow))
+        } else if stale {
+            Some(("stale".to_owned(), Color::Yellow))
+        } else if !node.accepts_remote() {
+            Some(("local".to_owned(), Color::DarkGray))
+        } else {
+            None
+        };
 
     // The badge is why the row deserves attention, so the *name* gives up
     // space for it rather than the badge being truncated off the end.
@@ -1256,7 +1271,6 @@ fn slot_colour(node: &Node) -> Color {
 /// dark enough not to compete with the slots that are actually busy.
 const SLOT_BASELINE: Color = Color::Rgb(120, 120, 120);
 
-
 /// How many files a second this node is finishing.
 ///
 /// The column was a ratio of measured throughput to the median of the node's
@@ -1352,7 +1366,9 @@ fn footer_line(app: &App, summary: &Summary) -> Line<'static> {
 /// that are pressed all the time, so the cost of asking once is much smaller
 /// than the cost of losing a session's counters — they all restart at connect.
 fn confirm_quit_overlay(frame: &mut Frame, area: Rect) {
-    let key = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+    let key = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(secondary());
     let lines = vec![
         Line::from(Span::raw("Quit icecream-watcher?")),
@@ -1366,10 +1382,7 @@ fn confirm_quit_overlay(frame: &mut Frame, area: Rect) {
             Span::styled("Esc", key),
             Span::styled("  stay", dim),
         ]),
-        Line::from(Span::styled(
-            "counters restart on the next connect",
-            dim,
-        )),
+        Line::from(Span::styled("counters restart on the next connect", dim)),
     ];
 
     let width = 42u16.min(area.width.saturating_sub(4)).max(20);
@@ -1394,7 +1407,11 @@ fn confirm_quit_overlay(frame: &mut Frame, area: Rect) {
                     ))
                     .title_alignment(Alignment::Center),
             )
-            .style(Style::default().bg(widgets::background()).fg(widgets::foreground())),
+            .style(
+                Style::default()
+                    .bg(widgets::background())
+                    .fg(widgets::foreground()),
+            ),
         popup,
     );
 }
@@ -1454,7 +1471,11 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
                     .title(" icecream-watcher help ")
                     .title_alignment(Alignment::Center),
             )
-            .style(Style::default().bg(widgets::background()).fg(widgets::foreground())),
+            .style(
+                Style::default()
+                    .bg(widgets::background())
+                    .fg(widgets::foreground()),
+            ),
         popup,
     );
 }
@@ -1636,7 +1657,9 @@ mod tests {
             .map(|x| buf[(x, row)].symbol().to_owned())
             .collect();
         // Cells, not bytes: a name sits to the right of a border character.
-        let at = line.find(name).map_or(0, |byte| line[..byte].chars().count());
+        let at = line
+            .find(name)
+            .map_or(0, |byte| line[..byte].chars().count());
         buf[(at as u16, row)].style().fg.unwrap_or(Color::Reset)
     }
 
@@ -1674,10 +1697,7 @@ mod tests {
     /// position rather than by exact spacing, so a column width change is not a
     /// test failure.
     fn counts_before_meter(row: &str) -> Vec<String> {
-        let head: String = row
-            .chars()
-            .take_while(|c| !is_meter_glyph(*c))
-            .collect();
+        let head: String = row.chars().take_while(|c| !is_meter_glyph(*c)).collect();
         let tokens: Vec<&str> = head.split_whitespace().collect();
         tokens
             .iter()
@@ -1714,7 +1734,10 @@ mod tests {
 
     /// Cells of a row's meter that the fill reaches.
     fn meter_fill(row: &str) -> usize {
-        slot_meter(row).chars().filter(|c| *c != METER_TROUGH).count()
+        slot_meter(row)
+            .chars()
+            .filter(|c| *c != METER_TROUGH)
+            .count()
     }
 
     fn slot_meter(row: &str) -> String {
@@ -1843,7 +1866,10 @@ mod tests {
         );
         // The table is still first in the queue for rows in both cases.
         assert!(50 - 2 - short_list >= 3 + 4, "the table keeps its rows");
-        assert!(long_list >= 3 * SERIES_ROWS_TALL as u16 + 2, "and the band keeps graphs");
+        assert!(
+            long_list >= 3 * SERIES_ROWS_TALL as u16 + 2,
+            "and the band keeps graphs"
+        );
     }
 
     #[test]
@@ -1853,7 +1879,10 @@ mod tests {
         // Its colour comes from the row, so rows are gradient steps: two rows
         // is two colours, which is a banding rather than a ramp.
         assert!(jobs >= 8, "not enough steps to read as a gradient: {jobs}");
-        assert!(jobs > side, "the flat-coloured series must not take it: {jobs} vs {side}");
+        assert!(
+            jobs > side,
+            "the flat-coloured series must not take it: {jobs} vs {side}"
+        );
     }
 
     #[test]
@@ -1866,7 +1895,9 @@ mod tests {
         // Occupancy as a figure, and as two minutes of shape beside it.
         assert!(out.contains("2/24"), "{out}");
         assert!(
-            series_lines(&out, "Jobs").iter().any(|l| l.chars().any(is_braille)),
+            series_lines(&out, "Jobs")
+                .iter()
+                .any(|l| l.chars().any(is_braille)),
             "expected a graph beside the figures: {out}"
         );
         assert!(out.contains("3 online"), "{out}");
@@ -1916,7 +1947,11 @@ mod tests {
         // twelve — the rest drawn but empty, and the figures beside them.
         assert_eq!(slot_meter(row).chars().count(), 12, "{row}");
         assert_eq!(meter_fill(row), 2, "{row}");
-        assert_eq!(counts_before_meter(row), ["8", "1"], "MAX and ACTIVE: {row}");
+        assert_eq!(
+            counts_before_meter(row),
+            ["8", "1"],
+            "MAX and ACTIVE: {row}"
+        );
     }
 
     /// Colours of the busy cells in a node's meter, read from the buffer.
@@ -1972,7 +2007,10 @@ mod tests {
 
         assert_eq!(quiet, vec![widgets::heat(0.125)]);
         assert_eq!(full, vec![widgets::heat(1.0)]);
-        assert_ne!(quiet, full, "the same colour at 1 of 8 and 8 of 8 says nothing");
+        assert_ne!(
+            quiet, full,
+            "the same colour at 1 of 8 and 8 of 8 says nothing"
+        );
     }
 
     #[test]
@@ -1992,8 +2030,7 @@ mod tests {
         // most nodes have none left the colour saying nothing exactly where it
         // would have said the most.
         let full_no_agent = meter_colours(&node_at_slots("dark", 1, 8, None), "dark");
-        let full_with_agent =
-            meter_colours(&node_at_slots("lit", 2, 8, Some(4.0)), "lit");
+        let full_with_agent = meter_colours(&node_at_slots("lit", 2, 8, Some(4.0)), "lit");
         assert_eq!(full_no_agent, full_with_agent);
         assert_ne!(full_no_agent, vec![Color::Gray], "grey said nothing at all");
     }
@@ -2014,7 +2051,10 @@ mod tests {
         }));
 
         let row = row_for(&render(&app, 110, 24), "build03").to_owned();
-        assert!(row.contains("style_engine.cc"), "the file is the answer: {row}");
+        assert!(
+            row.contains("style_engine.cc"),
+            "the file is the answer: {row}"
+        );
         assert!(row.contains('…'), "a cut path should say it was cut: {row}");
         assert!(
             !row.contains("third_party"),
@@ -2030,7 +2070,10 @@ mod tests {
         // slots the busy part would be a fraction of.
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:quiet\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+        app.apply(stats(
+            1,
+            "Name:quiet\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n",
+        ));
 
         let mut ui = Ui::default();
         let mut terminal = Terminal::new(TestBackend::new(130, 24)).unwrap();
@@ -2054,8 +2097,14 @@ mod tests {
         // most of its slots free.
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:full\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
-        app.apply(stats(2, "Name:roomy\nIP:10.0.0.2\nMaxJobs:32\nNoRemote:false\n"));
+        app.apply(stats(
+            1,
+            "Name:full\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n",
+        ));
+        app.apply(stats(
+            2,
+            "Name:roomy\nIP:10.0.0.2\nMaxJobs:32\nNoRemote:false\n",
+        ));
         for job in 0..8u32 {
             app.apply(Update::Event(Event::JobBegin {
                 job_id: 500 + job,
@@ -2091,7 +2140,10 @@ mod tests {
         // the count.
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:big\nIP:10.0.0.1\nMaxJobs:128\nNoRemote:false\n"));
+        app.apply(stats(
+            1,
+            "Name:big\nIP:10.0.0.1\nMaxJobs:128\nNoRemote:false\n",
+        ));
         for job in 0..64u32 {
             app.apply(Update::Event(Event::JobBegin {
                 job_id: 700 + job,
@@ -2252,7 +2304,10 @@ mod tests {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
-            assert!(!header.contains(machine), "{machine} should be gone: {header}");
+            assert!(
+                !header.contains(machine),
+                "{machine} should be gone: {header}"
+            );
         }
     }
 
@@ -2371,7 +2426,10 @@ mod tests {
         let out = render(&app, 130, 24);
         assert!(!out.contains("build03"), "the row should be gone:\n{out}");
         assert!(out.contains("2 online"), "{out}");
-        assert!(!out.contains("left"), "departures are not the band's business: {out}");
+        assert!(
+            !out.contains("left"),
+            "departures are not the band's business: {out}"
+        );
         assert!(out.contains("NODES  2"), "{out}");
     }
 
@@ -2638,8 +2696,16 @@ mod tests {
         // Agent staleness must not blank what the *scheduler* told us: slots
         // and speed have nothing to do with whether an agent answered.
         let row = row_for(&out, "build01");
-        assert_eq!(meter_fill(row), 2, "one slot of eight, on a twelve-cell bar: {row}");
-        assert_eq!(counts_before_meter(row), ["8", "1"], "Max and Active: {row}");
+        assert_eq!(
+            meter_fill(row),
+            2,
+            "one slot of eight, on a twelve-cell bar: {row}"
+        );
+        assert_eq!(
+            counts_before_meter(row),
+            ["8", "1"],
+            "Max and Active: {row}"
+        );
     }
 
     #[test]
@@ -2985,8 +3051,18 @@ mod tests {
         }
         // Everything the scheduler says about the node.
         for field in [
-            "name", "IP", "platform", "protocol", "features", "max jobs",
-            "speed", "load", "load average", "free memory", "received", "sent",
+            "name",
+            "IP",
+            "platform",
+            "protocol",
+            "features",
+            "max jobs",
+            "speed",
+            "load",
+            "load average",
+            "free memory",
+            "received",
+            "sent",
         ] {
             assert!(out.contains(field), "missing {field}:\n{out}");
         }
@@ -3029,7 +3105,10 @@ mod tests {
         // precedes it, which we miss if we attach in between.
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+        app.apply(stats(
+            1,
+            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n",
+        ));
         app.apply(Update::Event(Event::JobBegin {
             job_id: 900,
             start_time: 0,
@@ -3043,7 +3122,10 @@ mod tests {
     fn an_idle_node_says_its_slots_are_free_rather_than_listing_nothing() {
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n"));
+        app.apply(stats(
+            1,
+            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\n",
+        ));
         let out = detail_of(&mut app, "build01");
         assert!(out.contains("no remote jobs running"), "{out}");
         assert!(out.contains("8 slots free"), "{out}");
@@ -3062,7 +3144,10 @@ mod tests {
             "Name:mac\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\nFreeMem:5647912\n",
         ));
         let out = detail_of(&mut app, "mac");
-        assert!(out.contains("5647912"), "the raw figure must survive:\n{out}");
+        assert!(
+            out.contains("5647912"),
+            "the raw figure must survive:\n{out}"
+        );
         assert!(out.contains("KiB"), "the doubt must be stated:\n{out}");
 
         let mut app = App::new();
@@ -3072,7 +3157,10 @@ mod tests {
             "Name:linux\nIP:10.0.0.2\nMaxJobs:8\nNoRemote:false\nFreeMem:36732\n",
         ));
         let out = detail_of(&mut app, "linux");
-        assert!(out.contains("36732 MiB"), "a plausible figure is just shown:\n{out}");
+        assert!(
+            out.contains("36732 MiB"),
+            "a plausible figure is just shown:\n{out}"
+        );
     }
 
     #[test]
@@ -3299,7 +3387,10 @@ mod tests {
     fn a_long_filename_is_elided_rather_than_overflowing_the_line() {
         let mut app = App::new();
         app.apply(connected());
-        app.apply(stats(1, "Name:big\nIP:10.0.0.1\nMaxJobs:64\nNoRemote:false\n"));
+        app.apply(stats(
+            1,
+            "Name:big\nIP:10.0.0.1\nMaxJobs:64\nNoRemote:false\n",
+        ));
         for job in 0..64u32 {
             app.apply(Update::Event(Event::GetCs {
                 job_id: 800 + job,

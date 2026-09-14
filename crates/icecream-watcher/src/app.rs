@@ -724,7 +724,11 @@ mod tests {
             app.on_key(ignored);
         }
         assert_eq!(app.selected, selected, "the list moved under the prompt");
-        assert_eq!(app.sort, SortKey::Perf, "the order changed under the prompt");
+        assert_eq!(
+            app.sort,
+            SortKey::Perf,
+            "the order changed under the prompt"
+        );
         assert!(!app.detail, "a view opened under the prompt");
         assert!(app.confirm_quit, "the prompt should still be up");
 
@@ -790,7 +794,10 @@ mod tests {
             classify(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Key::ForceQuit
         );
-        assert_eq!(classify(KeyCode::Char('c'), KeyModifiers::NONE), Key::Ignored);
+        assert_eq!(
+            classify(KeyCode::Char('c'), KeyModifiers::NONE),
+            Key::Ignored
+        );
     }
 
     #[test]

@@ -302,7 +302,11 @@ mod tests {
     #[test]
     fn the_heat_ramp_runs_green_to_red() {
         assert_eq!(heat_rgb(0.0), HEAT_STOPS[0], "0 should be green");
-        assert_eq!(heat_rgb(1.0), *HEAT_STOPS.last().unwrap(), "1 should be red");
+        assert_eq!(
+            heat_rgb(1.0),
+            *HEAT_STOPS.last().unwrap(),
+            "1 should be red"
+        );
 
         // Monotonic in both channels: a gradient that doubles back reads as
         // noise, however pretty its individual colours are.
@@ -331,7 +335,11 @@ mod tests {
                 format!("{:?}", nearest_cube(r, g, b))
             })
             .collect();
-        assert!(cube.len() >= 8, "fallback collapsed to {} shades", cube.len());
+        assert!(
+            cube.len() >= 8,
+            "fallback collapsed to {} shades",
+            cube.len()
+        );
     }
 
     #[test]

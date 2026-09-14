@@ -23,10 +23,7 @@ pub const CELL_ROWS: usize = 4;
 /// Not a plain grid: braille was six dots before the eight-dot extension, so
 /// the bottom row was bolted on as the two high bits rather than continuing the
 /// sequence.
-const DOT_BITS: [[u8; CELL_ROWS]; CELL_COLS] = [
-    [0x01, 0x02, 0x04, 0x40],
-    [0x08, 0x10, 0x20, 0x80],
-];
+const DOT_BITS: [[u8; CELL_ROWS]; CELL_COLS] = [[0x01, 0x02, 0x04, 0x40], [0x08, 0x10, 0x20, 0x80]];
 
 /// U+2800 BRAILLE PATTERN BLANK. Adding the dot bits to it gives the glyph.
 const BRAILLE_BASE: u32 = 0x2800;
@@ -43,7 +40,11 @@ pub fn area(values: &[f32], max: f32, width: usize, rows: usize) -> Vec<String> 
     if width == 0 || rows == 0 {
         return Vec::new();
     }
-    let max = if max.is_finite() && max > 0.0 { max } else { 1.0 };
+    let max = if max.is_finite() && max > 0.0 {
+        max
+    } else {
+        1.0
+    };
     let dot_rows = rows * CELL_ROWS;
     let mut cells = vec![vec![0u8; width]; rows];
 
@@ -164,7 +165,10 @@ mod tests {
         // No samples at all: every cell is the blank braille pattern, so the
         // graph area keeps its shape without implying a measured zero.
         let empty = area(&[f32::NAN; 8], 100.0, 4, 2);
-        assert!(empty.iter().all(|l| l.chars().all(|c| c == '⠀')), "{empty:?}");
+        assert!(
+            empty.iter().all(|l| l.chars().all(|c| c == '⠀')),
+            "{empty:?}"
+        );
     }
 
     #[test]
@@ -227,7 +231,10 @@ mod tests {
         let falling = area(&[100.0, 0.0], 100.0, 1, 1);
         assert_ne!(rising, falling, "a cell must carry two samples, not one");
         assert_eq!(rising[0], "⣸", "left baseline only, right full: {rising:?}");
-        assert_eq!(falling[0], "⣇", "left full, right baseline only: {falling:?}");
+        assert_eq!(
+            falling[0], "⣇",
+            "left full, right baseline only: {falling:?}"
+        );
     }
 
     #[test]

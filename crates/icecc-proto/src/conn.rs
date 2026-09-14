@@ -148,12 +148,7 @@ pub fn spawn(source: Source, opts: Options) -> (mpsc::Receiver<Update>, Retry) {
     (rx, retry)
 }
 
-async fn run_live(
-    discovery: Discovery,
-    opts: Options,
-    retry: Retry,
-    tx: mpsc::Sender<Update>,
-) {
+async fn run_live(discovery: Discovery, opts: Options, retry: Retry, tx: mpsc::Sender<Update>) {
     // Counts *consecutive* failures. A connection that got as far as logging in
     // resets it, so a scheduler that flaps once an hour keeps reconnecting
     // promptly while one that is simply gone is backed off.
@@ -662,6 +657,9 @@ mod retry_tests {
         let first = tokio::time::timeout(Duration::from_millis(50), retry.0.notified()).await;
         assert!(first.is_ok(), "a stored request should be honoured");
         let second = tokio::time::timeout(Duration::from_millis(50), retry.0.notified()).await;
-        assert!(second.is_err(), "two requests must not queue up as two wakeups");
+        assert!(
+            second.is_err(),
+            "two requests must not queue up as two wakeups"
+        );
     }
 }

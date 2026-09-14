@@ -987,7 +987,6 @@ impl Cluster {
         let node = self.node_mut(host_id);
         record.merge_into(&mut node.stats);
         node.last_update = Instant::now();
-
     }
 
     fn finish_remote(&mut self, done: JobDone) {
@@ -1014,7 +1013,8 @@ impl Cluster {
                     // build full of errors is still a busy cluster.
                     node.completions.total += 1;
                     if done.exit_code == 0 && done.user_msec > 0 {
-                        node.throughput.push(u64::from(done.out_uncompressed), done.user_msec);
+                        node.throughput
+                            .push(u64::from(done.out_uncompressed), done.user_msec);
                     }
                 }
             }
@@ -1307,7 +1307,12 @@ mod tests {
         // decides how much object a CPU-second buys. Averaging those three
         // ratios describes the files. Dividing the totals describes the node.
         let mut t = Throughput::default();
-        for (bytes, ms) in [(7_776u64, 451u32), (139_104, 1_188), (8_728, 30), (55_016, 589)] {
+        for (bytes, ms) in [
+            (7_776u64, 451u32),
+            (139_104, 1_188),
+            (8_728, 30),
+            (55_016, 589),
+        ] {
             t.push(bytes, ms);
         }
         t.push(100_000, 1_000);
@@ -1316,11 +1321,16 @@ mod tests {
         let total_secs = (451 + 1_188 + 30 + 589 + 1_000) as f64 / 1000.0;
         assert!((rate - total_bytes as f64 / total_secs).abs() < 1.0);
 
-        let mean_of_ratios = [(7_776.0, 0.451), (139_104.0, 1.188), (8_728.0, 0.030),
-                              (55_016.0, 0.589), (100_000.0, 1.0)]
-            .iter()
-            .map(|(b, s): &(f64, f64)| b / s)
-            .sum::<f64>()
+        let mean_of_ratios = [
+            (7_776.0, 0.451),
+            (139_104.0, 1.188),
+            (8_728.0, 0.030),
+            (55_016.0, 0.589),
+            (100_000.0, 1.0),
+        ]
+        .iter()
+        .map(|(b, s): &(f64, f64)| b / s)
+        .sum::<f64>()
             / 5.0;
         // On these five jobs the mean of the ratios overstates the node by
         // about thirty per cent — one 30 ms job that happened to emit a lot of
@@ -1402,7 +1412,10 @@ mod tests {
 
         // Quiet, but not yet long enough to call it over.
         c.tick_history();
-        assert!(c.build.is_some(), "one quiet tick is not the end of a build");
+        assert!(
+            c.build.is_some(),
+            "one quiet tick is not the end of a build"
+        );
 
         pass(c.build_idle);
         c.tick_history();
@@ -1442,7 +1455,10 @@ mod tests {
         assert!(c.build.is_some());
 
         c.apply(connected());
-        assert!(c.build.is_none(), "the counters it was measured against reset");
+        assert!(
+            c.build.is_none(),
+            "the counters it was measured against reset"
+        );
         assert!(c.last_build.is_none());
     }
 
