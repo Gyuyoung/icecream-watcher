@@ -50,6 +50,19 @@ fn secondary() -> Color {
     widgets::rgb(160, 160, 160)
 }
 
+/// Text that names a column or a series, rather than being one.
+///
+/// Cyan rather than white, and the same cyan the node table's frame is drawn
+/// in. White is the brightest thing a terminal has, but it is also what every
+/// figure on this screen is already painted in, so a white heading is only as
+/// findable as the numbers under it — the eye has to read the row to know it is
+/// a heading. A hue nothing else on the screen wears is found without reading,
+/// and this one carries more luminance than the grey the table's headings used
+/// to be drawn in, which is the readability the brightness was standing in for.
+fn heading() -> Color {
+    widgets::rgb(0x8b, 0xe9, 0xfd)
+}
+
 /// Shown when a metric is not available. Distinct from `0`.
 pub(crate) const UNKNOWN: &str = "—";
 
@@ -332,6 +345,15 @@ const SERIES_ROWS_MAX: usize = 12;
 /// data the eye goes to first.
 const BAND_LEFT: usize = 42;
 
+/// Blank cells kept between a series' text and its graph.
+///
+/// Part of [`BAND_LEFT`] rather than added to it, so the graphs still begin in
+/// the same column and keep the width they had. A note that runs its full
+/// budget — "building 412 in 12m13s" is close to it — otherwise ends flush
+/// against the first column of dots, and the eye reads the two as one run:
+/// the figure looks like a label on the graph rather than a sentence beside it.
+const BAND_GUTTER: usize = 2;
+
 /// Below this the graph is too narrow to be worth the rows, so the band falls
 /// back to its compact one-line-per-series layout.
 const BAND_MIN_GRAPH: usize = 20;
@@ -423,7 +445,11 @@ fn series_block(
 ) -> Vec<Line<'static>> {
     (0..rows)
         .map(|r| {
-            let mut spans = fit(text.get(r).cloned().unwrap_or_default(), BAND_LEFT);
+            let mut spans = fit(
+                text.get(r).cloned().unwrap_or_default(),
+                BAND_LEFT - BAND_GUTTER,
+            );
+            spans.push(Span::raw(" ".repeat(BAND_GUTTER)));
             if let Some(glyphs) = glyphs.get(r) {
                 spans.push(Span::styled(glyphs.clone(), style_for_row(r)));
             }
@@ -730,15 +756,13 @@ fn band_value(text: String) -> Span<'static> {
 
 /// The name of a band series, in the column before its figure.
 ///
-/// Bright, not `DarkGray`: these three words are how the band is navigated —
-/// which row am I reading — and at colour 8 on a painted black they were the
-/// dimmest text on the screen, dimmer than the notes underneath them.
+/// In [`heading`], not `DarkGray`: these three words are how the band is
+/// navigated — which row am I reading — and at colour 8 on a painted black they
+/// were the dimmest text on the screen, dimmer than the notes underneath them.
 fn label(text: &str) -> Span<'static> {
     Span::styled(
         format!("{text:<7}"),
-        Style::default()
-            .fg(widgets::foreground())
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(heading()).add_modifier(Modifier::BOLD),
     )
 }
 
@@ -977,13 +1001,7 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     ]);
 
     let table = Table::new(rows, constraints)
-        .header(
-            Row::new(header).style(
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        )
+        .header(Row::new(header).style(Style::default().fg(heading()).add_modifier(Modifier::BOLD)))
         .block(
             Block::bordered()
                 .border_style(Style::default().fg(table_border()))
@@ -2730,6 +2748,40 @@ mod tests {
         let out = render(&busy_cluster(), 130, 24);
         assert!(row_for(&out, "build01").contains("build01"));
         assert!(!row_for(&out, "build01").contains('…'));
+    }
+
+    #[test]
+    fn a_series_note_never_touches_its_graph() {
+        // "building 412 in 12m13s" can run the text column's full budget, and
+        // flush against the first column of dots it reads as a label on the
+        // graph rather than as a sentence beside it. The gutter comes out of
+        // the text column, so the graph must still start where it always did.
+        let overlong = "x".repeat(BAND_LEFT * 2);
+        let lines = series_block(
+            vec![vec![Span::raw(overlong)]],
+            vec!["\u{283f}\u{283f}".to_owned()],
+            |_| Style::default(),
+            1,
+        );
+        let row: String = lines[0]
+            .spans
+            .iter()
+            .flat_map(|s| s.content.chars())
+            .collect();
+        let cols: Vec<char> = row.chars().collect();
+
+        for (col, c) in cols
+            .iter()
+            .enumerate()
+            .take(BAND_LEFT)
+            .skip(BAND_LEFT - BAND_GUTTER)
+        {
+            assert_eq!(*c, ' ', "column {col} is not gutter in {row:?}");
+        }
+        assert!(
+            is_graph_glyph(cols[BAND_LEFT]),
+            "the graph moved off column {BAND_LEFT}: {row:?}"
+        );
     }
 
     #[test]
