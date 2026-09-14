@@ -29,14 +29,14 @@ icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 
 │       peak 40/s · building for 0s        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ NODES  7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Node                        Max Active Jobs            Send Receive Files/sec  Compiling                            │
-│+ build01                    16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      48      23         0  …card/smart_card.mojom-blink.cc +14  │
-│+ build02                    16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀              18         0  …_sensor_provider.mojom-blink.cc +9  │
-│+ build03                    16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀              16         0  …udio/audio_worklet_processor.cc +7  │
-│+ build04                    16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀       9      12         0  …udio/audio_worklet_processor.cc +3  │
-│+ build05                     8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀               8         0                                       │
-│+ build07                    16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      10                 0                                       │
-│+ laptop local               12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      11       1         0  …ore/css/resolver/style_resolver.cc  │
+│Node                        Max Active Jobs            Send Receive File/s  Compiling                               │
+│+ build01                    16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      48      23      0  …rt_card/smart_card.mojom-blink.cc +14  │
+│+ build02                    16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀              18      0  …web_sensor_provider.mojom-blink.cc +9  │
+│+ build03                    16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀              16      0  …ebaudio/audio_worklet_processor.cc +7  │
+│+ build04                    16      4 ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀       9      12      0  …ebaudio/audio_worklet_processor.cc +3  │
+│+ build05                     8        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀               8      0                                          │
+│+ build07                    16        ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      10              0                                          │
+│+ laptop local               12      1 ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀      11       1      0  …r/core/css/resolver/style_resolver.cc  │
 │                                                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 q quit  ↑↓/jk select  Enter detail  s sort  n i p by name/jobs/perf  ? help   selected build02
@@ -118,16 +118,16 @@ icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 
 │  healthy                                                                                                           │
 │                                                                                                                    │
 │JOBS                                                                                                                │
-│    Job   1  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
-│    Job   2  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
-│    Job   3  (   0.0s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
-│    Job   4  (   0.0s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
-│    Job   5  (   0.0s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
-│    Job   6  (   0.0s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
-│    Job   7  (   0.0s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
-│    Job   8  (   0.0s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
-│    Job   9  (   0.0s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
-│    Job  10  (   0.0s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   1  (   0.1s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job   2  (   0.1s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
+│    Job   3  (   0.1s)  renderer/modules/webaudio/audio_worklet_processor.cc  · from build01                        │
+│    Job   4  (   0.1s)  renderer/core/layout/layout_block_flow.cc  · from build04                                   │
+│    Job   5  (   0.1s)  mojom/serial/serial.mojom-blink.cc  · from laptop                                           │
+│    Job   6  (   0.1s)  renderer/platform/graphics/paint/paint_controller.cc  · from build07                        │
+│    Job   7  (   0.1s)  renderer/core/css/resolver/style_resolver.cc  · from build01                                │
+│    Job   8  (   0.1s)  mojom/speculation_rules/speculation_rules.mojom-blink.cc  · from build04                    │
+│    Job   9  (   0.1s)  mojom/sensor/web_sensor_provider.mojom-blink.cc  · from laptop                              │
+│    Job  10  (   0.1s)  mojom/smart_card/smart_card.mojom-blink.cc  · from build07                                  │
 │    6 of 16 slots free                                                                                              │
 │                                                                                                                    │
 │NODE                                                                                                                │
@@ -227,7 +227,7 @@ notes. `icecream-watcher` finds agents by itself — it polls each node at the a
 scheduler reports, so there is nothing to configure per node.
 
 **The agent is optional and the overview does not need it.** Every column on the
-main screen comes from the scheduler, including `Files/sec`, which is counted
+main screen comes from the scheduler, including `File/s`, which is counted
 from finished jobs rather than from anything installed on the node. What
 an agent adds is the machine's own side of the story — why a node is slow, not
 just that it is — and it appears in the detail view. A node without one shows
@@ -264,13 +264,13 @@ its node through a re-sort.
 ## Reading the screen
 
 - `—` and `····` mean **not measured**, never zero. A node that has compiled
-  nothing yet reads `0` on `Files/sec`, which is measured; a figure that does
+  nothing yet reads `0` on `File/s`, which is measured; a figure that does
   not exist at all reads `—`. The two must not look the same.
 - `!` marks a node well below its platform's median in the detail view.
 - **Dim rows are idle.** Offline rows strike through and sink to the bottom.
 - **`Jobs`** is remote compiles running as a fraction of slots offered. Local
   compiles occupy no scheduler slot and are counted separately.
-- **`Files/sec`** is what it says: files this node finished per second, averaged
+- **`File/s`** is what it says: files this node finished per second, averaged
   over the last ten seconds. Work the cluster placed and work the machine kept
   for itself both count, because a file finished is a file finished — and
   because the headline `Rate` in the band counts both, and averages the same ten

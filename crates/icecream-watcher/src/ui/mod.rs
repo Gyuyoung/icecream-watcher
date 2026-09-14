@@ -857,10 +857,10 @@ fn columns(width: u16, longest_name: usize) -> Columns {
 /// Width of the `Max` and `Active` job-count columns.
 const COUNT_WIDTH: u16 = 6;
 const JOBS_WIDTH: u16 = 7;
-/// Sized by its heading rather than its figures: `Files/sec` is nine cells and
+/// Sized by its heading rather than its figures: `File/s` is six cells and
 /// `12.4` is four. The heading is what makes the column readable without the
-/// help overlay, so the figures carry no unit and the column carries the air.
-const RATE_WIDTH: u16 = 10;
+/// help overlay, so the figures carry no unit of their own.
+const RATE_WIDTH: u16 = 7;
 /// Below this a filename is elided to the point of saying nothing, so the
 /// `Compiling` column is not worth its space.
 const MIN_FILES: usize = 14;
@@ -915,12 +915,12 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     if cols.rate {
         header.push(Cell::from(format!(
             "{:>width$} ",
-            "Files/sec",
+            "File/s",
             width = RATE_WIDTH as usize - 1
         )));
     }
     if cols.files > 0 {
-        // Not "Files": the column beside it is `Files/sec`, and two headings
+        // Not "Files": the column beside it is `File/s`, and two headings
         // where one is the prefix of the other are read as one thing. This one
         // says what the node is doing, so it says that.
         header.push(Cell::from("Compiling"));
@@ -1428,7 +1428,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
         Line::from("  Send         jobs submitted from here; blank means a pure server"),
-        Line::from("  Files/sec    files this node is finishing, over ten seconds;"),
+        Line::from("  File/s       files this node is finishing, over ten seconds;"),
         Line::from("               the column adds up to Rate in the band above"),
         Line::from("  —            not measured, or not reported by this node"),
         Line::from("  blank count  none, which is different from — : the answer is known"),
@@ -2248,7 +2248,7 @@ mod tests {
             .lines()
             .find(|l| l.contains("Node"))
             .expect("header row");
-        for icecream in ["Max", "Active", "Jobs", "Receive", "Send", "Files/sec"] {
+        for icecream in ["Max", "Active", "Jobs", "Receive", "Send", "File/s"] {
             assert!(header.contains(icecream), "missing {icecream}: {header}");
         }
         for machine in ["CPU", "MEM", "TEMP"] {
@@ -2482,16 +2482,16 @@ mod tests {
         };
 
         let wide = header_of(130);
-        assert!(wide.contains("Send") && wide.contains("Files/sec"), "{wide}");
+        assert!(wide.contains("Send") && wide.contains("File/s"), "{wide}");
 
         // Job counters go first: they are a tally, and a tally is the easiest
         // thing to read one column to the right in the detail view.
         let medium = header_of(80);
         assert!(!medium.contains("Send"), "{medium}");
-        assert!(medium.contains("Files/sec"), "{medium}");
+        assert!(medium.contains("File/s"), "{medium}");
 
         let tiny = header_of(50);
-        assert!(!tiny.contains("Files/sec"), "{tiny}");
+        assert!(!tiny.contains("File/s"), "{tiny}");
         // Slots survive every width, because they are the point.
         assert!(tiny.contains("Jobs"), "{tiny}");
         assert!(
