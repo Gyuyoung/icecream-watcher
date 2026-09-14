@@ -286,6 +286,11 @@ fn series_rows(inner: usize) -> (usize, usize) {
     (inner.saturating_sub(2 * side), side)
 }
 
+/// Ticks the headline rate is averaged over. The same window the per-node
+/// column uses, because the one property that column has is that it adds up to
+/// this figure.
+const RATE_WINDOW: usize = 10;
+
 /// Rows per series once the band is tall enough for dot graphs.
 const SERIES_ROWS_TALL: usize = 2;
 /// Rows per series on a large terminal.
@@ -559,9 +564,12 @@ fn queue_block(
 fn rate_block(cluster: &Cluster, width: usize, rows: usize) -> Vec<Line<'static>> {
     let history = &cluster.rate_history;
     let peak = history.max().unwrap_or(1.0).max(1.0);
-    let now = history.last().unwrap_or(0.0);
+    // The same ten seconds the per-node column averages over, so the nodes'
+    // figures add up to this one. A single tick is a small integer, and a
+    // headline stepping 0, 3, 0, 5 reads as noise rather than as throughput.
+    let now = history.mean_recent(RATE_WINDOW).unwrap_or(0.0);
 
-    let head = vec![label("Rate"), band_value(format!("{now:.0}/s"))];
+    let head = vec![label("Rate"), band_value(format!("{now:.1}/s"))];
     let notes = vec![Span::styled(
         format!("{:<7}peak {peak:.0}/s · {}", "", build_note(cluster)),
         Style::default().fg(secondary()),
@@ -691,11 +699,14 @@ fn rate_line(cluster: &Cluster, bar_width: usize) -> Line<'static> {
     let history = &cluster.rate_history;
     let window = history.window(bar_width);
     let peak = history.max().unwrap_or(1.0).max(1.0);
-    let now = history.last().unwrap_or(0.0);
+    // The same ten seconds the per-node column averages over, so the nodes'
+    // figures add up to this one. A single tick is a small integer, and a
+    // headline stepping 0, 3, 0, 5 reads as noise rather than as throughput.
+    let now = history.mean_recent(RATE_WINDOW).unwrap_or(0.0);
 
     vec![
         label("Rate"),
-        band_value(format!("{now:.0}/s")),
+        band_value(format!("{now:.1}/s")),
         Span::styled(
             widgets::sparkline(&window, peak),
             Style::default().fg(Color::Magenta),
@@ -851,7 +862,7 @@ const JOBS_WIDTH: u16 = 7;
 /// help overlay, so the figures carry no unit and the column carries the air.
 const RATE_WIDTH: u16 = 10;
 /// Below this a filename is elided to the point of saying nothing, so the
-/// column is not worth its space.
+/// `Compiling` column is not worth its space.
 const MIN_FILES: usize = 14;
 /// Beyond this the column stops growing. Source paths are long, but a row is
 /// read left to right and the answer — which file — is at the end of the path,
@@ -909,7 +920,10 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         )));
     }
     if cols.files > 0 {
-        header.push(Cell::from("Files"));
+        // Not "Files": the column beside it is `Files/sec`, and two headings
+        // where one is the prefix of the other are read as one thing. This one
+        // says what the node is doing, so it says that.
+        header.push(Cell::from("Compiling"));
     }
 
     let rows: Vec<Row> = app
@@ -1410,7 +1424,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  Max / Active compile slots configured, and how many are busy now"),
         Line::from("  Jobs         how full this node's compile slots are, as a bar"),
         Line::from("               green → yellow → red; every row's bar is one width"),
-        Line::from("  Files        the file this node has been compiling longest,"),
+        Line::from("  Compiling    the file this node has been working on longest,"),
         Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
         Line::from("  Send         jobs submitted from here; blank means a pure server"),
@@ -1692,9 +1706,7 @@ mod tests {
     /// What a named row holds under a named column heading.
     fn column_of(out: &str, row_name: &str, heading: &str) -> String {
         let header = out.lines().find(|l| l.contains("Node")).expect("header");
-        // Last match, not first: `Files` is also the tail of `Files/sec`, the
-        // column beside it.
-        let at = header[..header.rfind(heading).expect("heading")]
+        let at = header[..header.find(heading).expect("heading")]
             .chars()
             .count();
         row_for(out, row_name).chars().skip(at).collect()
@@ -2265,7 +2277,7 @@ mod tests {
     #[test]
     fn the_files_column_names_what_each_node_is_compiling() {
         let out = render(&busy_cluster(), 130, 24);
-        assert!(out.contains("Files"), "{out}");
+        assert!(out.contains("Compiling"), "{out}");
 
         // A working node names its file; an idle one has nothing to name, and
         // says so by leaving the column empty rather than by drawing `—`.
@@ -2277,7 +2289,7 @@ mod tests {
         assert!(!idle.contains(".cc"), "nothing is compiling here: {idle}");
         // Blank, not `—`: the column knows the answer. Read at the column
         // itself, because `—` elsewhere on the row means something else.
-        let files = column_of(&out, "build03", "Files");
+        let files = column_of(&out, "build03", "Compiling");
         assert_eq!(
             files.trim_end_matches('\u{2502}').trim(),
             "",

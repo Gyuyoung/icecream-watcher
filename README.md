@@ -25,11 +25,11 @@ icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 
 │Queue  7 wait    → steady                 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │       peak 7 · 38 remote · 0 local       ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿│
 │┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈│
-│Rate   0/s                                ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
+│Rate   0.0/s                              ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀│
 │       peak 40/s · building for 0s        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀│
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌ NODES  7 ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│Node                        Max Active Jobs            Send Receive Files/sec  Files                                │
+│Node                        Max Active Jobs            Send Receive Files/sec  Compiling                            │
 │+ build01                    16     15 ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇      48      23         0  …card/smart_card.mojom-blink.cc +14  │
 │+ build02                    16     10 ⣿⣿⣿⣿⣿⣿⣿⣇⣀⣀⣀⣀              18         0  …_sensor_provider.mojom-blink.cc +9  │
 │+ build03                    16      8 ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀              16         0  …udio/audio_worklet_processor.cc +7  │
@@ -91,7 +91,7 @@ yellow mean *state* here — a problem badge, a saturated metric, a hot sensor �
 a healthy node that happened to hash into that range would read as a node in
 trouble.
 
-`Files` names **what each node is compiling right now**. One name, not a list: a
+`Compiling` names **what each node is working on right now**. One name, not a list: a
 row is a strip, and the job that has been running longest is both the one worth
 naming — it answers "what is taking so long" — and the one most likely to still
 be there on the next frame, so the column can be read instead of flickering. The
@@ -271,8 +271,10 @@ its node through a re-sort.
 - **`Jobs`** is remote compiles running as a fraction of slots offered. Local
   compiles occupy no scheduler slot and are counted separately.
 - **`Files/sec`** is what it says: files this node finished per second, averaged
-  over the last ten seconds. The column adds up to `Rate` in the band above it,
-  so it can be checked by eye. It measures **contribution, not speed** — a
+  over the last ten seconds. Work the cluster placed and work the machine kept
+  for itself both count, because a file finished is a file finished — and
+  because the headline `Rate` in the band counts both, and averages the same ten
+  seconds, so the column adds up to it and can be checked by eye. It measures **contribution, not speed** — a
   thirty-two slot machine chewing easy files beats a fast twelve-slot one on
   hard ones, and a node nobody is sending work to reads `0` however quick it is.
   What one file costs on a node, and how that compares with its peers on the

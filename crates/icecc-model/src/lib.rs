@@ -941,6 +941,13 @@ impl Cluster {
                 Some(job) => {
                     if let Some(node) = job.host_id.and_then(|id| self.nodes.get_mut(&id)) {
                         node.local_jobs.remove(&job_id);
+                        // A file finished here is a file finished, whether the
+                        // cluster placed it or the machine kept it. Counting
+                        // only placed work made the submitting node — the one
+                        // actually running the build — read zero, and broke the
+                        // one property the column has: that it adds up to the
+                        // cluster rate, which counts both.
+                        node.completions.total += 1;
                     }
                     self.totals.completed_local += 1;
                 }
@@ -1213,6 +1220,33 @@ mod tests {
         c.apply(stats(1, &node_blob("build01", 8)));
         c.apply(stats(2, &node_blob("build02", 4)));
         c
+    }
+
+    #[test]
+    fn files_finished_locally_are_still_files_finished() {
+        // The submitting machine compiles what the cluster did not take, and
+        // those completions arrive as JOB_LOCAL_DONE rather than MON_JOB_DONE.
+        // Counting only the latter left the node running the build reading
+        // zero, and stopped the per-node column adding up to the cluster rate.
+        let mut c = cluster_with_two_nodes();
+        for job_id in 0..4u32 {
+            c.apply(Update::Event(Event::LocalJobBegin {
+                job_id,
+                start_time: 0,
+                host_id: 1,
+                file: "main.cc".into(),
+            }));
+            c.apply(Update::Event(Event::LocalJobDone { job_id }));
+        }
+        c.tick_history();
+
+        assert_eq!(c.totals.completed_local, 4);
+        assert_eq!(
+            c.nodes[&1].completions.per_second(),
+            Some(4.0),
+            "four files in one tick is four a second"
+        );
+        assert_eq!(c.nodes[&2].completions.per_second(), Some(0.0));
     }
 
     #[test]

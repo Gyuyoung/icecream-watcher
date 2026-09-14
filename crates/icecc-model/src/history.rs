@@ -81,6 +81,23 @@ impl History {
     }
 
     /// Largest measured value, for scaling a graph whose range is not 0..100.
+    /// Mean of the newest `n` measured samples.
+    ///
+    /// For a figure that is a *rate*: one tick of a completion counter is a
+    /// small integer, and a headline that steps 0, 3, 0, 5 reads as noise
+    /// rather than as throughput. The graph underneath still has every tick.
+    pub fn mean_recent(&self, n: usize) -> Option<f32> {
+        let measured: Vec<f32> = self
+            .samples
+            .iter()
+            .rev()
+            .take(n)
+            .copied()
+            .filter(|v| v.is_finite())
+            .collect();
+        (!measured.is_empty()).then(|| measured.iter().sum::<f32>() / measured.len() as f32)
+    }
+
     pub fn max(&self) -> Option<f32> {
         self.samples
             .iter()
