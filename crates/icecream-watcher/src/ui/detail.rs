@@ -271,18 +271,39 @@ fn node_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
         if node.accepts_remote() { "yes" } else { "no" }.to_owned(),
     ));
     out.push(field(
-        "speed",
-        match node.speed() {
-            Some(s) => {
-                let mut text = format!("{s:.1} output bytes per user-second");
-                if cluster.is_slow_outlier(node) {
-                    if let Some(median) = cluster.median_speed() {
-                        text.push_str(&format!("  — well below the cluster median of {median:.0}"));
+        "measured speed",
+        match node.throughput.rate() {
+            Some(rate) => {
+                let mut text = format!(
+                    "{:.0} KB of object per CPU-second, over {} jobs",
+                    rate / 1024.0,
+                    node.throughput.jobs_measured()
+                );
+                // Against its own platform: icecream only sends a job to a node
+                // whose environment matches, so nodes of other platforms are
+                // not compiling the same build.
+                if let Some(median) = cluster.median_rate_among_peers(node) {
+                    if median > 0.0 {
+                        text.push_str(&format!(
+                            "  ({:.1}x the {} median)",
+                            rate / median,
+                            node.platform()
+                        ));
                     }
+                }
+                if cluster.is_slow_outlier(node) {
+                    text.push_str("  \u{2014} well below its peers");
                 }
                 text
             }
-            None => "unknown until this node compiles something".to_owned(),
+            None => "not enough finished jobs to measure yet".to_owned(),
+        },
+    ));
+    out.push(field(
+        "scheduler speed",
+        match node.speed() {
+            Some(s) => format!("{s:.1} \u{2014} the scheduler's own estimate of this machine"),
+            None => UNKNOWN.to_owned(),
         },
     ));
     out.push(field(

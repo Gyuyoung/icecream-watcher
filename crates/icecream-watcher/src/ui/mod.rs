@@ -869,7 +869,7 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         .unwrap_or(0);
     let cols = columns(area.width, longest_name);
     let stale_after = cluster.metrics_stale_after;
-    let median_speed = cluster.median_speed();
+
 
     let mut header = vec![Cell::from("Node")];
     if cols.cur_max {
@@ -913,7 +913,7 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let rows: Vec<Row> = app
         .sorted_nodes()
         .into_iter()
-        .map(|node| node_row(node, &cols, stale_after, median_speed, cluster))
+        .map(|node| node_row(node, &cols, stale_after, cluster))
         .collect();
 
     let mut constraints = vec![Constraint::Length(cols.name)];
@@ -975,7 +975,6 @@ fn node_row<'a>(
     node: &Node,
     cols: &Columns,
     stale_after: std::time::Duration,
-    median_speed: Option<f64>,
     cluster: &Cluster,
 ) -> Row<'a> {
     let stale = node.has_agent() && node.metrics_stale(stale_after);
@@ -994,7 +993,7 @@ fn node_row<'a>(
         cells.push(Cell::from(count_cell(node.jobs_out, w)));
     }
     if cols.perf {
-        cells.push(Cell::from(perf_cell(node, median_speed, cluster)));
+        cells.push(Cell::from(perf_cell(node, cluster)));
     }
     if cols.files > 0 {
         cells.push(Cell::from(files_cell(node, cluster, cols.files)));
@@ -1250,12 +1249,19 @@ const SLOT_BASELINE: Color = Color::Rgb(120, 120, 120);
 /// change when the machine starts throttling or somebody else starts using it.
 ///
 /// This is measured, from what finished jobs report: a multiple of what the
-/// middle node of this cluster is managing, so `0.4×` means two and a half
-/// times slower than the rest and needs no unit to read. A node with too few
-/// jobs behind it shows `—` rather than a figure nobody should act on.
-fn perf_cell<'a>(node: &Node, median: Option<f64>, cluster: &Cluster) -> Line<'a> {
+/// middle node **of its own platform** is managing, so `0.4×` means two and a
+/// half times slower than its peers and needs no unit to read. Per platform
+/// because icecream only sends a job to a node whose environment matches, so
+/// nodes of different platforms are compiling different builds and the ratio
+/// between them measures nothing. A node with too few jobs behind it, or with
+/// no peer to be compared against, shows `—` rather than a figure nobody
+/// should act on.
+fn perf_cell<'a>(node: &Node, cluster: &Cluster) -> Line<'a> {
     let figure_width = PERF_WIDTH as usize - 1;
-    let (Some(rate), Some(median)) = (node.throughput.rate(), median) else {
+    let (Some(rate), Some(median)) = (
+        node.throughput.rate(),
+        cluster.median_rate_among_peers(node),
+    ) else {
         return dim(format!("{UNKNOWN:>figure_width$}"));
     };
     if median <= 0.0 {
@@ -1419,8 +1425,8 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("               with +n for the other jobs filling its slots"),
         Line::from("  Receive      jobs compiled here for the cluster, since connect"),
         Line::from("  Send         jobs submitted from here; blank means a pure server"),
-        Line::from("  Perf         measured speed against the cluster's middle node;"),
-        Line::from("               0.4x is two and a half times slower than the rest"),
+        Line::from("  Perf         measured speed against the middle node of its own"),
+        Line::from("               platform; 0.4x is two and a half times slower"),
         Line::from("  —            not measured, or not reported by this node"),
         Line::from("  blank count  none, which is different from — : the answer is known"),
         Line::from("  !            what is limiting this node, or a slow outlier"),

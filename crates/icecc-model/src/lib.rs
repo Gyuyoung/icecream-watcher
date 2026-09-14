@@ -696,39 +696,57 @@ impl Cluster {
     }
 
     /// Median compile speed across nodes that have one, for spotting outliers.
-    pub fn median_speed(&self) -> Option<f64> {
-        let mut speeds: Vec<f64> = self
+    /// The middle measured rate among the nodes that do the same work as
+    /// `node` — the ones on its platform.
+    ///
+    /// Per platform, because icecream only sends a job to a node whose
+    /// environment matches it: a `Darwin25_arm64` node compiles the macOS build
+    /// and an `x86_64` node compiles the Linux one, so the two are not doing the
+    /// same work and the ratio between them measures nothing.
+    ///
+    /// Measured on a live four-node cluster: the macOS node read 3.8x the
+    /// cluster-wide median while running 891 jobs averaging 359 ms against the
+    /// x86 nodes' two to four seconds — different work, not a faster machine —
+    /// and in doing so dragged all three x86 nodes below 1.0x, which was the
+    /// only thing on the screen anyone could have acted on.
+    ///
+    /// `None` for a platform with nothing to compare against: one node is its
+    /// own median, and `1.0x` would claim a comparison that was never made.
+    pub fn median_rate_among_peers(&self, node: &Node) -> Option<f64> {
+        let mut rates: Vec<f64> = self
             .nodes
             .values()
+            .filter(|n| n.platform() == node.platform())
             .filter_map(|n| n.throughput.rate())
             .collect();
-        if speeds.is_empty() {
+        if rates.len() < 2 {
             return None;
         }
-        speeds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        Some(speeds[speeds.len() / 2])
+        rates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Some(rates[rates.len() / 2])
     }
 
-    /// Whether a node is markedly slower than the rest of the cluster.
+    /// Whether a node is markedly slower than the rest of its platform.
     ///
     /// Answers "is one node significantly slower than the others?" without
-    /// making the user compare numbers by eye. Needs at least three nodes with
-    /// a measured rate, or the median is not meaningful — and the rate is the
-    /// measured one, so a node that is slow because it is throttling or because
-    /// somebody else is using it counts as slow, which the scheduler's own
-    /// estimate of the machine never would.
+    /// making the user compare numbers by eye. Needs at least three nodes of
+    /// that platform with a measured rate, or the median is not meaningful —
+    /// and the rate is the measured one, so a node that is slow because it is
+    /// throttling or because somebody else is using it counts as slow, which
+    /// the scheduler's own estimate of the machine never would.
     pub fn is_slow_outlier(&self, node: &Node) -> bool {
         if self
             .nodes
             .values()
+            .filter(|n| n.platform() == node.platform())
             .filter(|n| n.throughput.rate().is_some())
             .count()
             < 3
         {
             return false;
         }
-        match (node.throughput.rate(), self.median_speed()) {
-            (Some(speed), Some(median)) if median > 0.0 => speed < median * SLOW_OUTLIER_FRACTION,
+        match (node.throughput.rate(), self.median_rate_among_peers(node)) {
+            (Some(rate), Some(median)) if median > 0.0 => rate < median * SLOW_OUTLIER_FRACTION,
             _ => false,
         }
     }
@@ -1136,6 +1154,57 @@ mod tests {
         c.apply(stats(1, &node_blob("build01", 8)));
         c.apply(stats(2, &node_blob("build02", 4)));
         c
+    }
+
+    #[test]
+    fn a_node_is_measured_against_its_own_platform() {
+        // icecream only sends a job to a node whose environment matches, so a
+        // macOS node and a Linux node are compiling different builds. Measured
+        // on a live cluster, the macOS node read 3.8x the cluster-wide median
+        // while running jobs a tenth the length of the Linux ones — and pushed
+        // every Linux node below 1.0x in the process.
+        let mut c = Cluster::new();
+        c.apply(connected());
+        for (id, name, platform) in [
+            (1u32, "linux01", "x86_64"),
+            (2, "linux02", "x86_64"),
+            (3, "mac", "Darwin25_arm64"),
+        ] {
+            c.apply(stats(
+                id,
+                &format!("Name:{name}\nIP:10.0.0.{id}\nMaxJobs:8\nPlatform:{platform}\n"),
+            ));
+        }
+        // The mac produces ten times the object per CPU-second of either Linux
+        // node, because it is compiling something else entirely.
+        for (host, out_bytes) in [(1u32, 100_000u32), (2, 120_000), (3, 1_100_000)] {
+            for n in 0..6u32 {
+                let job_id = host * 1000 + n;
+                c.apply(get_cs(job_id, host));
+                c.apply(job_begin(job_id, host));
+                c.apply(Update::Event(Event::JobDone(JobDone {
+                    job_id,
+                    exit_code: 0,
+                    user_msec: 1_000,
+                    out_uncompressed: out_bytes,
+                    ..Default::default()
+                })));
+            }
+        }
+
+        let linux = &c.nodes[&1];
+        let mac = &c.nodes[&3];
+        let linux_median = c.median_rate_among_peers(linux).expect("two x86 peers");
+        assert!(
+            (linux.throughput.rate().unwrap() / linux_median - 0.83).abs() < 0.02,
+            "the x86 node is measured against the other x86 node"
+        );
+        // The lone macOS node has nothing to compare against and says so,
+        // rather than reporting itself as exactly average.
+        assert!(
+            c.median_rate_among_peers(mac).is_none(),
+            "one node is its own median, which is not a comparison"
+        );
     }
 
     #[test]

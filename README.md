@@ -56,7 +56,7 @@ The name column is sized to the cluster rather than to a fixed maximum, so
 nothing is padded out with cells that nothing fills.
 A machine's CPU, memory and temperature are its own business and belong in the
 detail view. `build04` is a slow outlier and the `!` beside its `Perf` says so:
-at `0.3×` it is producing a third of what the middle node of this cluster
+at `0.3×` it is producing a third of what the middle node of its own platform
 produces per second of CPU. `build05` and `build07` have not finished enough
 jobs on this connection for the figure to mean anything, so they say `—` rather
 than guess. Nothing on this screen needs an agent on the nodes.
@@ -139,9 +139,9 @@ icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 
 │    features          env_xz env_zstd                                                                               │
 │    max jobs          16                                                                                            │
 │    accepts remote    yes                                                                                           │
-│    speed             2900.0 output bytes per user-second                                                           │
+│    measured speed    85 KB of object per CPU-second, over 8 jobs  (1.0x the x86_64 median)                         │
+│    scheduler speed   2900.0 — the scheduler's own estimate of this machine                                         │
 │    load              610 of 1000 — the scheduler's placement weight                                                │
-│    load average      8.54  8.54  8.54   (1 / 5 / 10 min)   (1.07 per core, over 8)                                 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 Esc/q back  ↑↓/jk scroll  Ctrl-C quit   build02
 ```
@@ -272,7 +272,14 @@ its node through a re-sort.
 - **`Jobs`** is remote compiles running as a fraction of slots offered. Local
   compiles occupy no scheduler slot and are counted separately.
 - **`Perf`** is measured, not estimated: bytes of compiled output per second of
-  CPU time, as a multiple of what the cluster's middle node manages. It comes
+  CPU time, as a multiple of what the middle node **of its own platform**
+  manages. Per platform because icecream only sends a job to a node whose
+  environment matches it, so a `Darwin25_arm64` node is compiling the macOS
+  build while the `x86_64` nodes compile the Linux one — measured on a live
+  four-node cluster, the macOS node read `3.8×` the cluster-wide median while
+  running jobs a tenth the length of the others, and pushed all three Linux
+  nodes below `1.0×` in the process. A node with no peer on its platform shows
+  `—`, because one node is its own median. It comes
   from what finished jobs report, so it needs nothing installed on the nodes,
   and it is the ratio of the sums rather than the mean of the ratios — one job
   says almost nothing, because what a file *is* decides how much object a
