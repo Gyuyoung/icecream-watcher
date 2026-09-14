@@ -2751,6 +2751,37 @@ mod tests {
     }
 
     #[test]
+    fn headings_are_painted_in_the_heading_colour() {
+        // The table's headings were `DarkGray` and the band's were white, which
+        // is what every figure beside them is painted in. Both complaints were
+        // about the same thing: a heading nobody can find without reading it.
+        let mut ui = Ui::default();
+        let mut terminal = Terminal::new(TestBackend::new(130, 30)).unwrap();
+        let app = busy_cluster();
+        terminal.draw(|f| draw(f, &app, &mut ui)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+
+        let colour_of = |needle: &str| -> Option<Color> {
+            for y in 0..buf.area.height {
+                let row: String = (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol().to_owned())
+                    .collect();
+                if let Some(at) = row.find(needle) {
+                    let col = row[..at].chars().count() as u16;
+                    return buf[(col, y)].style().fg;
+                }
+            }
+            None
+        };
+
+        assert_eq!(colour_of("Node "), Some(heading()), "table heading");
+        assert_eq!(colour_of("Compiling"), Some(heading()), "table heading");
+        assert_eq!(colour_of("Total"), Some(heading()), "band label");
+        assert_eq!(colour_of("Queue"), Some(heading()), "band label");
+        assert_eq!(colour_of("Rate"), Some(heading()), "band label");
+    }
+
+    #[test]
     fn a_series_note_never_touches_its_graph() {
         // "building 412 in 12m13s" can run the text column's full budget, and
         // flush against the first column of dots it reads as a label on the
