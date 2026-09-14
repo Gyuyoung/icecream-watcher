@@ -559,6 +559,11 @@ mod tests {
 
         let sock = socket2::SockRef::from(&stream);
         assert!(sock.keepalive().unwrap(), "SO_KEEPALIVE not enabled");
+        // Windows takes these settings and offers no way to read them back, so
+        // there the assertion is only that the option is on. The values are the
+        // same call on every platform; what is being guarded is that the call
+        // happens at all.
+        #[cfg(not(target_os = "windows"))]
         assert_eq!(sock.keepalive_time().unwrap(), KEEPALIVE_IDLE);
         #[cfg(target_os = "linux")]
         {
