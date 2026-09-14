@@ -3,6 +3,8 @@
 Status: **Phase 1 research complete; Phases 2–6 implemented** (see §8), with the
 UI reworked around Icecream data in §8e–§8g.
 Decisions approved 2026-09-10: **Rust + ratatui/crossterm/tokio**, **Tier 0+1** collection (§4, §5).
+**Tier 1 — the per-node agent — was later removed in full**, leaving the tool on
+scheduler data alone: see the note at the head of §4.
 Target: a btop-class TUI for monitoring an Icecream (icecc) distributed compile cluster.
 
 Everything in this document was derived from reading upstream source and, where marked
@@ -284,22 +286,44 @@ carrying the legacy path.
 | remote-job availability | scheduler `NoRemote` | |
 | platform, features, protocol | scheduler | |
 | node online/offline | scheduler `State:Offline` + connection loss | |
-| load average | scheduler (coarse) **or** agent (1 Hz) | scheduler value is event-driven |
-| free memory | scheduler `FreeMem` (coarse) **or** agent | MiB available; **no MemTotal** |
-| **CPU utilisation, per-core** | **agent only** | `/proc/stat`, delta between samples |
-| **memory total / used / %** | **agent only** | `/proc/meminfo` |
-| **swap** | **agent only** | `/proc/meminfo` |
-| **CPU frequency** | **agent only** | `/proc/cpuinfo`, `/sys/devices/system/cpu/*/cpufreq` |
-| **CPU temperature** | **agent only** | `/sys/class/hwmon/*`, `/sys/class/thermal/thermal_zone*/temp` |
-| **uptime** | **agent only** | `/proc/uptime` |
-| **network RX/TX** | **agent only** | `/proc/net/dev`, delta between samples |
-| **disk I/O** (optional) | **agent only** | `/proc/diskstats` |
+| load average | scheduler (coarse) | event-driven, not a 1 Hz sample |
+| free memory | scheduler `FreeMem` (coarse) | MiB available; **no MemTotal** |
+| files finished per second | derived from `MON_JOB_DONE` | per node and cluster-wide |
+| **CPU utilisation, per-core** | **nowhere** | not in any Icecream message |
+| **memory total / used / %** | **nowhere** | `FreeMem` has no total to divide by |
+| **swap, CPU frequency, temperature, uptime** | **nowhere** | |
+| **network RX/TX, disk I/O** | **nowhere** | |
 
-Nine of the fields required for the target UX exist in no Icecream message at all.
+Nine of the fields originally wanted for the target UX exist in no Icecream
+message at all. §4 records the attempt to collect them from the nodes, and why
+it was removed.
 
 ---
 
-## 4. Node resource collection: Option A vs Option B
+## 4. Node resource collection: Option A vs Option B — **removed**
+
+> **This was built, shipped, and then taken out.** `icecc-metrics`,
+> `icecream-watcher-agent` and the monitor's polling loop are gone, along with
+> the `agent?` / `stale` / `host?` badges, the detail view's `AGENT` footnote,
+> and the `--agent-port` / `--poll-interval` / `--poll-timeout` /
+> `--stale-after` / `--no-agents` flags.
+>
+> The reason is the one this section never weighed: **deployment cost**.
+> Everything below argues about how the monitor should *reach* an agent, and
+> nothing in it asks whether a user would install one on every build node. They
+> would not — `icemon` needs nothing on the nodes, so a monitor that does is a
+> monitor with a worse first five minutes, and the analysis in §8b's "graceful
+> degradation" was really a description of how the tool would be used in
+> practice: without agents, on every cluster.
+>
+> What was lost is real: CPU utilisation, memory, temperature, frequency, swap,
+> uptime and network throughput are not on the wire and are now not shown.
+> What replaced it is `File/s` (§8i), counted from job completions — a node's
+> speed measured by the work it finishes rather than by a sensor on it, which
+> turns out to be the question the numbers were being read for anyway.
+>
+> The analysis is kept because the protocol findings in it are still true and
+> still the reason those fields cannot be had from the scheduler.
 
 ### The premise of Option A does not hold
 
@@ -415,7 +439,7 @@ installed here, so an FTXUI build would need it or a vendored protocol layer any
 
 ## 6. Repository structure
 
-Present tense = exists today (Phase 2). Marked *(planned)* = later phases.
+Present tense = exists today.
 
 ```
 icecream-watcher/
@@ -431,28 +455,19 @@ icecream-watcher/
 │   │   ├── src/discover.rs       explicit target, env, UDP broadcast discovery
 │   │   ├── src/conn.rs           connection task, reconnect, record/replay
 │   │   └── tests/golden.rs       decodes bytes captured from a real scheduler
-│   ├── icecc-metrics/            node metrics wire format + HTTP client
-│   │   ├── src/lib.rs            Snapshot and friends; units in field names
-│   │   └── src/client.rs         one GET, no HTTP stack pulled in
-│   ├── icecc-model/              Cluster, Node, job accounting, agent metrics
+│   ├── icecc-model/              Cluster, Node, job accounting
 │   │   └── src/history.rs        sample ring buffers and trend detection
-│   ├── icecream-watcher-agent/              icecream-watcher-agent
-│   │   ├── src/parse.rs          pure /proc and /sys parsers
-│   │   ├── src/sampler.rs        sampling, deltas, sensor selection
-│   │   └── src/server.rs         single-endpoint HTTP/1.1
-│   └── icecream-watcher/                the TUI binary
+│   └── icecream-watcher/         the TUI binary
 │       ├── src/main.rs           CLI, runtime wiring, terminal setup
-│       ├── src/app.rs            state, key handling (sort modes: planned)
-│       ├── src/collect.rs        parallel agent polling
+│       ├── src/app.rs            state, key handling, sort modes
 │       └── src/ui/               rendering
 │           ├── mod.rs            cluster band, node table, help overlay
 │           ├── detail.rs         the per-node detail view
 │           └── widgets.rs        block bars, sparklines, colour ramps
 └── contrib/
-    ├── capture/                  protocol captures + format docs
-    │   ├── README.md
-    │   └── lab-session.icwcap   golden-test fixture from a live scheduler
-    └── systemd/                  hardened agent unit + deployment notes
+    └── capture/                  protocol captures + format docs
+        ├── README.md
+        └── lab-session.icwcap   golden-test fixture from a live scheduler
 ```
 
 The planned `docs/protocol.md` was **dropped**: §2 of this document is already
@@ -460,8 +475,8 @@ the authoritative, wire-verified protocol reference, and maintaining a second
 copy would only let the two drift apart. The capture file format — the one thing
 §2 does not cover — is documented in `contrib/capture/README.md`.
 
-`icecc-proto` and `icecream-watcher-agent` stay independently usable — the protocol crate is the piece most
-likely to be valuable to other people, and keeping it UI-free keeps it honest.
+`icecc-proto` stays independently usable — it is the piece most likely to be
+valuable to other people, and keeping it UI-free keeps it honest.
 
 ---
 
@@ -561,7 +576,11 @@ describes.
 
 ---
 
-## 8b. Phase 3 — node resource monitoring — **done**
+## 8b. Phase 3 — node resource monitoring — **done, then removed**
+
+> Removed in full; see §4 for why. The record below is what was built and
+> verified, kept because the protocol and `/proc` findings in it are still true.
+
 
 `icecream-watcher-agent` samples `/proc` and `/sys` once a second and serves the last
 snapshot over one `GET /metrics`; `icecream-watcher` polls every node at the address the

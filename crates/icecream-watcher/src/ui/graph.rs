@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn a_measured_zero_is_not_a_gap() {
         // The trap this whole codebase keeps guarding against: a node whose
-        // agent was down must not look like a node that was idle.
+        // went unreported must not look like a node that was idle.
         let zero = area(&flat(0.0, 2), 100.0, 1, 1);
         let gap = area(&[f32::NAN; 2], 100.0, 1, 1);
         assert_ne!(zero, gap);

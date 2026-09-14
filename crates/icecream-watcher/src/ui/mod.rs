@@ -30,7 +30,7 @@ pub mod widgets;
 
 use std::time::{Duration, Instant};
 
-use icecc_model::{Cluster, ConnectionState, Job, JobState, Node, ResourceState, Summary, Trend};
+use icecc_model::{Cluster, ConnectionState, Job, JobState, Node, Summary, Trend};
 use ratatui::layout::{Alignment, Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -935,7 +935,6 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
         .max()
         .unwrap_or(0);
     let cols = columns(area.width, longest_name);
-    let stale_after = cluster.metrics_stale_after;
 
     let mut header = vec![Cell::from("Node")];
     if cols.cur_max {
@@ -984,7 +983,7 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     let rows: Vec<Row> = app
         .sorted_nodes()
         .into_iter()
-        .map(|node| node_row(node, &cols, stale_after, cluster))
+        .map(|node| node_row(node, &cols, cluster))
         .collect();
 
     let mut constraints = vec![Constraint::Length(cols.name)];
@@ -1036,15 +1035,8 @@ fn node_table(frame: &mut Frame, area: Rect, app: &App, ui: &mut Ui) {
     frame.render_stateful_widget(table, area, &mut ui.table);
 }
 
-fn node_row<'a>(
-    node: &Node,
-    cols: &Columns,
-    stale_after: std::time::Duration,
-    cluster: &Cluster,
-) -> Row<'a> {
-    let stale = node.has_agent() && node.metrics_stale(stale_after);
-
-    let mut cells = vec![Cell::from(name_cell(node, stale, cols.name as usize))];
+fn node_row<'a>(node: &Node, cols: &Columns, cluster: &Cluster) -> Row<'a> {
+    let mut cells = vec![Cell::from(name_cell(node, cols.name as usize))];
     if cols.cur_max {
         let w = COUNT_WIDTH as usize;
         cells.push(Cell::from(count_cell(u64::from(node.max_jobs()), w)));
@@ -1176,22 +1168,15 @@ fn path_tail(path: &str, width: usize) -> String {
 /// press rather than as data.
 const EXPAND_MARK: &str = "+ ";
 
-fn name_cell<'a>(node: &Node, stale: bool, width: usize) -> Line<'a> {
+fn name_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     // At most one badge, in order of how much it should worry the reader.
-    let badge: Option<(String, Color)> =
-        if matches!(node.resource_state, ResourceState::Error { .. }) {
-            Some(("agent?".to_owned(), Color::LightRed))
-        } else if node.identity_mismatch {
-            Some(("host?".to_owned(), Color::LightRed))
-        } else if node.suspect() {
-            Some(("no ack".to_owned(), Color::Yellow))
-        } else if stale {
-            Some(("stale".to_owned(), Color::Yellow))
-        } else if !node.accepts_remote() {
-            Some(("local".to_owned(), Color::DarkGray))
-        } else {
-            None
-        };
+    let badge: Option<(String, Color)> = if node.suspect() {
+        Some(("no ack".to_owned(), Color::Yellow))
+    } else if !node.accepts_remote() {
+        Some(("local".to_owned(), Color::DarkGray))
+    } else {
+        None
+    };
 
     // The badge is why the row deserves attention, so the *name* gives up
     // space for it rather than the badge being truncated off the end.
@@ -1253,10 +1238,10 @@ pub(crate) fn elide(text: &str, max: usize) -> String {
 ///
 /// Colour ramps with the same fraction, green through yellow to red, so a node
 /// with nothing left to give is picked out of a list without reading its
-/// figures. It carried the node's CPU utilisation instead, which needs an agent
-/// on the machine: on a cluster where most nodes have none, the column was
-/// neutral grey on machines that were in fact pegged, and a colour that is
-/// absent exactly when it would be interesting is worse than no colour at all.
+/// figures. It carried CPU utilisation instead, which the monitor protocol does
+/// not carry: the column went neutral grey on machines that were in fact
+/// pegged, and a colour that is absent exactly when it would be interesting is
+/// worse than no colour at all.
 fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
     if width == 0 {
         return Line::raw("");
@@ -1296,12 +1281,11 @@ fn slots_cell<'a>(node: &Node, width: usize) -> Line<'a> {
 /// yellow to red.
 ///
 /// The same figure the bar's length carries, on purpose. It was the node's CPU
-/// utilisation, which reads well but needs an agent on the machine — and a
-/// cluster where most nodes have none was a column of neutral grey saying
-/// nothing about machines that were pegged. Slot occupancy comes from the
-/// scheduler, so it is known for every node that is here at all, and colour and
-/// length now answer the same question twice rather than hiding a second one
-/// inside the first. CPU, where an agent reports it, is in the detail view.
+/// utilisation, which reads well but is not on the wire — the column was
+/// neutral grey, saying nothing about machines that were pegged. Slot occupancy
+/// comes from the scheduler, so it is known for every node that is here at all,
+/// and colour and length now answer the same question twice rather than hiding
+/// a second one inside the first.
 fn slot_colour(node: &Node) -> Color {
     widgets::heat(node.slot_pct().unwrap_or(0.0) / 100.0)
 }
@@ -1488,7 +1472,6 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("               the column adds up to Rate in the band above"),
         Line::from("  —            not measured, or not reported by this node"),
         Line::from("  blank count  none, which is different from — : the answer is known"),
-        Line::from("  !            what is limiting this node, or a slow outlier"),
         Line::from("  dim row      idle"),
         Line::from("  node colour  keyed by hostname, so a node keeps it across re-sorts"),
     ];
@@ -1522,8 +1505,6 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icecc_metrics::Snapshot;
-    use icecc_model::ResourceResult;
     use icecc_proto::{Event, SchedulerTarget, Update};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
@@ -1543,50 +1524,6 @@ mod tests {
         Update::Event(Event::Stats {
             host_id,
             stats: blob.into(),
-        })
-    }
-
-    fn snapshot(hostname: &str, cpu: f32, mem_used_kib: u64, temp: Option<f32>) -> Box<Snapshot> {
-        Box::new(Snapshot {
-            schema: icecc_metrics::SCHEMA_VERSION,
-            agent_version: "0.1.0".into(),
-            hostname: hostname.into(),
-            addresses: vec![],
-            uptime_secs: 1000,
-            sampled_unix_ms: 1,
-            sample_interval_ms: 1000,
-            cpu: icecc_metrics::Cpu {
-                cores: 8,
-                total_busy_pct: cpu,
-                per_core_busy_pct: vec![cpu; 8],
-                freq_mhz: vec![],
-            },
-            mem: icecc_metrics::Mem {
-                total_kib: 1000,
-                available_kib: 1000 - mem_used_kib,
-                free_kib: 1000 - mem_used_kib,
-                buffers_kib: 0,
-                cached_kib: 0,
-                swap_total_kib: 0,
-                swap_free_kib: 0,
-            },
-            load: icecc_metrics::Load {
-                one: 14.2,
-                five: 12.0,
-                fifteen: 9.0,
-                runnable: 8,
-                total_procs: 500,
-            },
-            thermal: icecc_metrics::Thermal {
-                cpu_celsius: temp,
-                cpu_source: temp.map(|_| "coretemp/Package id 0".to_owned()),
-                sensors: vec![],
-            },
-            net: icecc_metrics::Net {
-                rx_bytes_per_sec: 0,
-                tx_bytes_per_sec: 0,
-                interfaces: vec![],
-            },
         })
     }
 
@@ -1837,18 +1774,6 @@ mod tests {
             "Name:build03\nIP:10.0.0.3\nMaxJobs:8\nNoRemote:false\nSpeed:3100\n",
         ));
         // build01 CPU-bound, build02 memory-bound, build03 idle.
-        app.apply_resource(
-            1,
-            ResourceResult::Ok(snapshot("build01", 95.0, 500, Some(78.0))),
-        );
-        app.apply_resource(
-            2,
-            ResourceResult::Ok(snapshot("build02", 60.0, 950, Some(70.0))),
-        );
-        app.apply_resource(
-            3,
-            ResourceResult::Ok(snapshot("build03", 2.0, 100, Some(45.0))),
-        );
         for id in [1u32, 2] {
             app.apply(Update::Event(Event::GetCs {
                 job_id: id * 100,
@@ -2017,18 +1942,14 @@ mod tests {
         colours
     }
 
-    /// One node with `busy` of its eight slots taken, and an agent only if
-    /// `cpu` says so.
-    fn node_at_slots(name: &str, id: u32, busy: u32, cpu: Option<f32>) -> App {
+    /// One node with `busy` of its eight slots taken.
+    fn node_at_slots(name: &str, id: u32, busy: u32) -> App {
         let mut app = App::new();
         app.apply(connected());
         app.apply(stats(
             id,
             &format!("Name:{name}\nIP:10.0.0.{id}\nMaxJobs:8\nNoRemote:false\n"),
         ));
-        if let Some(cpu) = cpu {
-            app.apply_resource(id, ResourceResult::Ok(snapshot(name, cpu, 100, None)));
-        }
         for job in 0..busy {
             app.apply(Update::Event(Event::JobBegin {
                 job_id: 500 + job,
@@ -2041,8 +1962,8 @@ mod tests {
 
     #[test]
     fn the_meter_is_coloured_by_how_full_the_node_is() {
-        let quiet = meter_colours(&node_at_slots("quiet", 1, 1, None), "quiet");
-        let full = meter_colours(&node_at_slots("full", 1, 8, None), "full");
+        let quiet = meter_colours(&node_at_slots("quiet", 1, 1), "quiet");
+        let full = meter_colours(&node_at_slots("full", 1, 8), "full");
 
         assert_eq!(quiet, vec![widgets::heat(0.125)]);
         assert_eq!(full, vec![widgets::heat(1.0)]);
@@ -2056,22 +1977,9 @@ mod tests {
     fn every_node_uses_the_same_scale() {
         // Not a colour per node: two machines working equally hard must look
         // equally hard-working, whoever they are.
-        let a = meter_colours(&node_at_slots("alpha", 1, 6, None), "alpha");
-        let b = meter_colours(&node_at_slots("omega", 2, 6, None), "omega");
+        let a = meter_colours(&node_at_slots("alpha", 1, 6), "alpha");
+        let b = meter_colours(&node_at_slots("omega", 2, 6), "omega");
         assert_eq!(a, b);
-    }
-
-    #[test]
-    fn a_node_with_no_agent_is_coloured_like_any_other() {
-        // Occupancy comes from the scheduler, so the colour does not depend on
-        // anything being installed on the node. It used to: a machine with no
-        // agent was drawn neutral however full it was, which on a cluster where
-        // most nodes have none left the colour saying nothing exactly where it
-        // would have said the most.
-        let full_no_agent = meter_colours(&node_at_slots("dark", 1, 8, None), "dark");
-        let full_with_agent = meter_colours(&node_at_slots("lit", 2, 8, Some(4.0)), "lit");
-        assert_eq!(full_no_agent, full_with_agent);
-        assert_ne!(full_no_agent, vec![Color::Gray], "grey said nothing at all");
     }
 
     #[test]
@@ -2435,7 +2343,7 @@ mod tests {
     }
 
     #[test]
-    fn without_an_agent_the_row_keeps_its_shape_but_claims_nothing() {
+    fn a_node_that_reports_only_its_name_still_gets_a_full_row() {
         let mut app = App::new();
         app.apply(connected());
         app.apply(stats(
@@ -2444,8 +2352,8 @@ mod tests {
         ));
         let out = render(&app, 130, 24);
         let row = row_for(&out, "build01");
-        // Everything in this table comes from the scheduler except LOAD, so a
-        // missing agent costs one column and nothing else.
+        // Everything in this table comes from the scheduler, so a node that
+        // has sent nothing but its identity still gets every column drawn.
         assert!(
             slot_meter(row).chars().all(|c| c == METER_TROUGH),
             "slots are scheduler data and must still be drawn: {row}"
@@ -2512,9 +2420,10 @@ mod tests {
         let out = render(&app, 130, 30);
         assert!(out.contains("icecream-watcher help"), "{out}");
         assert!(out.contains("cycle sort"), "{out}");
-        // The two symbols a newcomer cannot guess.
+        // The two marks a newcomer cannot guess: the row opens, and a dash is
+        // not a zero.
+        assert!(out.contains("this row opens"), "{out}");
         assert!(out.contains("not measured"), "{out}");
-        assert!(out.contains("slow outlier"), "{out}");
     }
 
     #[test]
@@ -2639,10 +2548,6 @@ mod tests {
                     i % 250
                 ),
             ));
-            app.apply_resource(
-                i,
-                ResourceResult::Ok(snapshot(&format!("build{i:03}"), 50.0, 500, Some(60.0))),
-            );
         }
         app.tick_history();
 
@@ -2723,28 +2628,6 @@ mod tests {
         app.last_event = Some(Instant::now());
         let out = render(&app, 160, 24);
         assert!(!out.contains("quiet"), "{out}");
-    }
-
-    #[test]
-    fn stale_metrics_are_badged_but_keep_their_last_values() {
-        let mut app = busy_cluster();
-        app.cluster.metrics_stale_after = std::time::Duration::from_millis(1);
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        let out = render(&app, 130, 24);
-        assert!(out.contains("stale"), "{out}");
-        // Agent staleness must not blank what the *scheduler* told us: slots
-        // and speed have nothing to do with whether an agent answered.
-        let row = row_for(&out, "build01");
-        assert_eq!(
-            meter_fill(row),
-            2,
-            "one slot of eight, on a twelve-cell bar: {row}"
-        );
-        assert_eq!(
-            counts_before_meter(row),
-            ["8", "1"],
-            "Max and Active: {row}"
-        );
     }
 
     #[test]
@@ -3025,15 +2908,15 @@ mod tests {
         ];
         let mut app = App::new();
         app.apply(connected());
-        let nodes: [(u32, &str, u32, f32, u64, f32, f64); 6] = [
-            (1, "build01", 16, 96.0, 720, 78.0, 3200.0),
-            (2, "build02", 16, 61.0, 955, 71.0, 2900.0),
-            (3, "build03", 16, 48.0, 410, 63.0, 3100.0),
-            (4, "build04", 16, 22.0, 260, 55.0, 940.0),
-            (5, "build05", 8, 4.0, 180, 41.0, 3050.0),
-            (6, "laptop", 12, 12.0, 620, 52.0, 0.0),
+        let nodes: [(u32, &str, u32, f32, f64); 6] = [
+            (1, "build01", 16, 96.0, 3200.0),
+            (2, "build02", 16, 61.0, 2900.0),
+            (3, "build03", 16, 48.0, 3100.0),
+            (4, "build04", 16, 22.0, 940.0),
+            (5, "build05", 8, 4.0, 3050.0),
+            (6, "laptop", 12, 12.0, 0.0),
         ];
-        for (id, name, max, cpu, mem, temp, speed) in nodes {
+        for (id, name, max, cpu, speed) in nodes {
             let remote = if name == "laptop" { "true" } else { "false" };
             app.apply(stats(
                 id,
@@ -3045,9 +2928,8 @@ mod tests {
                     avg = (cpu * 140.0) as u32,
                 ),
             ));
-            app.apply_resource(id, ResourceResult::Ok(snapshot(name, cpu, mem, Some(temp))));
         }
-        // A node that has dropped out, and one whose agent never answered.
+        // A node that has dropped out.
         app.apply(stats(
             7,
             "Name:build06\nIP:10.0.0.7\nMaxJobs:16\nNoRemote:false\n",
@@ -3061,7 +2943,7 @@ mod tests {
         // Finished work behind each node, so the Perf column has something
         // measured to divide. The laptop gets none: a node with too few jobs
         // behind it says so rather than guessing.
-        for (id, name, _, _, _, _, speed) in nodes {
+        for (id, name, _, _, speed) in nodes {
             if name == "laptop" {
                 continue;
             }
@@ -3092,7 +2974,7 @@ mod tests {
         // the slot meters show whose work is running where.
         let mut job = 1000;
         let clients = [1u32, 4, 6, 8];
-        for (id, _, max, cpu, _, _, _) in nodes {
+        for (id, _, max, cpu, _) in nodes {
             let running = (max as f32 * cpu / 100.0).round() as u32;
             for n in 0..running {
                 job += 1;
@@ -3185,7 +3067,7 @@ mod tests {
         let mut app = busy_cluster();
         detail_of(&mut app, "build01");
         let out = detail_text(&app);
-        for section in ["JOBS", "NODE", "AGENT"] {
+        for section in ["JOBS", "NODE"] {
             assert!(out.contains(section), "missing {section}:\n{out}");
         }
         // Everything the scheduler says about the node.
@@ -3334,16 +3216,20 @@ mod tests {
                 host_id: 1,
             }));
         }
+        // The last line of the last section, so reaching it means the whole
+        // panel is reachable rather than merely more of it than fits.
+        const LAST: &str = "job counts are since this monitor connected";
+
         let first_screen = detail_of(&mut app, "build01");
         // Tall content on a short terminal: the later sections start off-screen.
-        assert!(!first_screen.contains("AGENT"), "{first_screen}");
+        assert!(!first_screen.contains(LAST), "{first_screen}");
 
         for _ in 0..40 {
             app.on_key(crate::app::Key::Down);
         }
         let scrolled = render(&app, 118, 30);
         assert!(
-            scrolled.contains("AGENT"),
+            scrolled.contains(LAST),
             "scrolling should reach the end:\n{scrolled}"
         );
     }
@@ -3369,47 +3255,13 @@ mod tests {
     }
 
     #[test]
-    fn a_node_with_no_agent_says_so_instead_of_showing_blanks() {
-        let mut app = App::new();
-        app.apply(connected());
-        app.apply(stats(
-            1,
-            "Name:build01\nIP:10.0.0.1\nMaxJobs:8\nNoRemote:false\nSpeed:3000\n",
-        ));
-        detail_of(&mut app, "build01");
-        let out = detail_text(&app);
-        assert!(out.contains("no agent here"), "{out}");
-        // Everything this panel shows comes from the scheduler, so a missing
-        // agent costs it nothing but the badge it can no longer justify.
-        assert!(out.contains("slots free"), "{out}");
-        assert!(out.contains("3000"), "{out}");
-    }
-
-    #[test]
-    fn a_healthy_node_says_so_and_an_unhealthy_one_leads_with_the_problem() {
+    fn a_healthy_node_says_so_rather_than_saying_nothing() {
+        // Silence must never be ambiguous: a node with nothing wrong has to
+        // say so, or an empty status block reads as a panel that failed to
+        // load rather than as good news.
         let mut app = busy_cluster();
         let healthy = detail_of(&mut app, "build01");
         assert!(healthy.contains("healthy"), "{healthy}");
-
-        // Silence must never be ambiguous: a node with nothing wrong says so,
-        // and a node with something wrong leads with it.
-        app.on_key(crate::app::Key::Back);
-        app.apply_resource(2, ResourceResult::Bad("HTTP 503".into()));
-        let sick = detail_of(&mut app, "build02");
-        assert!(sick.contains("AGENT ERROR"), "{sick}");
-        assert!(sick.contains("503"), "{sick}");
-    }
-
-    #[test]
-    fn a_wrong_host_warning_names_both_sides() {
-        let mut app = busy_cluster();
-        app.apply_resource(
-            1,
-            ResourceResult::Ok(snapshot("someone-else", 50.0, 500, Some(60.0))),
-        );
-        let out = detail_of(&mut app, "build01");
-        assert!(out.contains("WRONG HOST?"), "{out}");
-        assert!(out.contains("someone-else"), "{out}");
     }
 
     #[test]

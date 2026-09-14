@@ -18,57 +18,8 @@ use std::time::{Duration, Instant};
 
 pub use history::{History, Trend};
 
-use icecc_metrics::Snapshot;
 use icecc_proto::msg::JobDone;
 use icecc_proto::{Event, SchedulerTarget, StatsRecord, Update};
-
-/// How a node's resource metrics are doing. Distinguishing "no agent" from
-/// "agent broken" from "stale" matters: the first is a deployment gap, the
-/// others are faults.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum ResourceState {
-    /// Never polled yet.
-    #[default]
-    Unknown,
-    /// Fresh metrics in hand.
-    Ok,
-    /// Nothing listening. Almost always means the agent is not installed.
-    NoAgent { reason: String },
-    /// Something answered but could not be used — wrong service on the port,
-    /// an unsupported schema, a timeout.
-    Error { reason: String },
-}
-
-impl ResourceState {
-    /// One short word for the UI.
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Unknown => "?",
-            Self::Ok => "ok",
-            Self::NoAgent { .. } => "no agent",
-            Self::Error { .. } => "error",
-        }
-    }
-
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            Self::NoAgent { reason } | Self::Error { reason } => Some(reason),
-            _ => None,
-        }
-    }
-}
-
-/// Outcome of one attempt to poll an agent.
-#[derive(Debug, Clone)]
-pub enum ResourceResult {
-    /// Boxed because a snapshot with per-core data is large next to the other
-    /// variants, and this type is moved through a channel.
-    Ok(Box<Snapshot>),
-    /// Could not reach anything.
-    Unreachable(String),
-    /// Reached something unusable.
-    Bad(String),
-}
 
 /// A compile node as the scheduler describes it, plus what we have counted.
 #[derive(Debug, Clone)]
@@ -92,21 +43,6 @@ pub struct Node {
     pub jobs_local: u64,
     /// When we last heard anything about this node.
     pub last_update: Instant,
-    /// Last good metrics from this node's agent, kept even once stale so a row
-    /// shows its last known values rather than going blank.
-    pub resources: Option<Snapshot>,
-    pub resource_state: ResourceState,
-    /// When the last *successful* poll landed, by the monitor's clock. The
-    /// agent's own clock is not trusted for staleness.
-    pub resources_at: Option<Instant>,
-    /// The agent's hostname does not match the name the scheduler reports,
-    /// which means we are probably talking to the wrong host (NAT, a reused
-    /// address, a stale DNS entry).
-    pub identity_mismatch: bool,
-    /// Recent CPU busy percentage, one sample per history tick.
-    pub cpu_history: History,
-    /// Recent memory used percentage.
-    pub mem_history: History,
     /// Recent compile-slot occupancy, as a percentage of this node's slots.
     pub slots_history: History,
     /// What this node's finished jobs say about how fast it actually is.
@@ -126,14 +62,8 @@ impl Node {
             jobs_out: 0,
             jobs_local: 0,
             last_update: Instant::now(),
-            resources: None,
-            resource_state: ResourceState::default(),
-            resources_at: None,
-            identity_mismatch: false,
-            cpu_history: History::default(),
             throughput: Throughput::default(),
             completions: Completions::default(),
-            mem_history: History::default(),
             slots_history: History::default(),
         }
     }
@@ -190,64 +120,10 @@ impl Node {
         self.last_update.elapsed() > limit
     }
 
-    /// Whether an agent has ever answered for this node.
-    pub fn has_agent(&self) -> bool {
-        self.resources.is_some()
-    }
-
-    /// Metrics we hold are older than `limit`. Unlike scheduler stats, agent
-    /// metrics *are* expected on a fixed interval, so silence here is a fault.
-    pub fn metrics_stale(&self, limit: Duration) -> bool {
-        match self.resources_at {
-            Some(at) => at.elapsed() > limit,
-            None => self.resources.is_some(),
-        }
-    }
-
-    /// Metrics that can be shown as current: present, and not stale.
-    pub fn fresh_metrics(&self, limit: Duration) -> Option<&Snapshot> {
-        if self.metrics_stale(limit) {
-            return None;
-        }
-        self.resources.as_ref()
-    }
-
-    /// CPU busy percentage from the agent. `None` without one — deliberately
-    /// not derived from the scheduler's `Load`, which is a scheduling weight
-    /// and not utilisation.
-    pub fn cpu_pct(&self) -> Option<f32> {
-        self.resources.as_ref().map(|r| r.cpu.total_busy_pct)
-    }
-
-    /// Memory in use as a percentage of total. Needs an agent: the protocol
-    /// carries no memory total at all.
-    pub fn mem_pct(&self) -> Option<f32> {
-        self.resources.as_ref().and_then(|r| r.mem.used_pct())
-    }
-
-    pub fn temp_c(&self) -> Option<f32> {
-        self.resources.as_ref().and_then(|r| r.thermal.cpu_celsius)
-    }
-
-    /// Cores as the agent counts them. The scheduler's `MaxJobs` is a
-    /// configured slot count and can differ from the real core count.
-    pub fn cores(&self) -> Option<usize> {
-        self.resources.as_ref().map(|r| r.cpu.cores)
-    }
-
-    /// Load average, preferring the agent's 1 Hz reading over the scheduler's
-    /// change-driven one.
+    /// Load average as the scheduler reports it, which is change-driven: it
+    /// updates when the node's state changes rather than on a clock.
     pub fn load_avg_1(&self) -> Option<f32> {
-        self.resources
-            .as_ref()
-            .map(|r| r.load.one)
-            .or(self.stats.load_avg_1.map(|v| v as f32))
-    }
-
-    /// Load per core, which is what makes differently sized nodes comparable.
-    pub fn load_per_core(&self) -> Option<f32> {
-        let cores = self.cores()?;
-        self.resources.as_ref()?.load.per_core(cores)
+        self.stats.load_avg_1.map(|v| v as f32)
     }
 
     /// Compile slots in use, as a percentage. `None` when the node offers none.
@@ -258,51 +134,9 @@ impl Node {
 
     /// Whether this node is doing anything at all, for dimming idle rows.
     pub fn is_busy(&self) -> bool {
-        self.current_jobs() > 0
-            || !self.local_jobs.is_empty()
-            || self.cpu_pct().is_some_and(|c| c >= BUSY_CPU_PCT)
-    }
-
-    /// Which single metric is holding this node back, if any.
-    ///
-    /// The point is to separate "CPU constrained" from "memory constrained" at
-    /// a glance; without it both just look like a busy node.
-    pub fn bottleneck(&self) -> Option<Bottleneck> {
-        let cpu = self.cpu_pct().unwrap_or(0.0);
-        let mem = self.mem_pct().unwrap_or(0.0);
-
-        // Memory first: a node that is out of memory will thrash rather than
-        // compile, so it is the more actionable of the two.
-        if mem >= MEM_PRESSURE_PCT {
-            return Some(Bottleneck::Memory);
-        }
-        if cpu >= CPU_SATURATED_PCT {
-            return Some(Bottleneck::Cpu);
-        }
-        if self.slot_pct().is_some_and(|s| s >= 100.0) {
-            return Some(Bottleneck::Slots);
-        }
-        None
+        self.current_jobs() > 0 || !self.local_jobs.is_empty()
     }
 }
-
-/// A node's limiting factor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Bottleneck {
-    Cpu,
-    Memory,
-    /// Every compile slot is taken, but the machine itself is not saturated —
-    /// this node could take more work if `MaxJobs` allowed it.
-    Slots,
-}
-
-/// Above this, a node counts as doing work even with no compile jobs assigned
-/// (it may be running a local build, or something unrelated).
-const BUSY_CPU_PCT: f32 = 15.0;
-/// Above this, CPU is the limiting factor.
-const CPU_SATURATED_PCT: f32 = 85.0;
-/// Above this, memory pressure will hurt compile throughput.
-const MEM_PRESSURE_PCT: f32 = 90.0;
 
 /// What a job is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -523,12 +357,6 @@ pub struct Summary {
     /// Nodes that have left the cluster since connect. Their rows are gone, so
     /// this is the only thing left saying they were ever here.
     pub nodes_left: u64,
-    /// Online nodes reporting fresh metrics.
-    pub nodes_with_metrics: usize,
-    /// Online nodes with no agent answering, i.e. a deployment gap.
-    pub nodes_without_agent: usize,
-    /// Online nodes whose agent has gone quiet or is failing.
-    pub nodes_metrics_stale: usize,
 }
 
 impl Summary {
@@ -549,10 +377,6 @@ pub struct Cluster {
     pub counters_since: Instant,
     /// Message types we could not model, counted once per type for the log.
     pub unknown_messages: BTreeMap<u32, u64>,
-    /// Agent metrics older than this count as stale. Agents report on a fixed
-    /// interval, so this can be tight — unlike scheduler stats, which are
-    /// change-driven and legitimately silent for minutes.
-    pub metrics_stale_after: Duration,
     /// Jobs waiting for a node, sampled per tick. This is the series that
     /// answers "is the scheduler queue growing?".
     pub pending_history: History,
@@ -606,7 +430,6 @@ impl Cluster {
             },
             counters_since: Instant::now(),
             unknown_messages: BTreeMap::new(),
-            metrics_stale_after: Duration::from_secs(5),
             pending_history: History::default(),
             slots_history: History::default(),
             rate_history: History::default(),
@@ -622,9 +445,9 @@ impl Cluster {
     /// Drop all derived state. Called on connect, because the scheduler replays
     /// the node list and we cannot reconcile old job ids against a new session.
     ///
-    /// Agent metrics go with it: host ids are assigned by the scheduler and a
-    /// new session may hand the same id to a different machine, so keeping the
-    /// old readings could attach one node's CPU graph to another.
+    /// Per-node history goes with it: host ids are assigned by the scheduler
+    /// and a new session may hand the same id to a different machine, so
+    /// keeping the old samples could attach one node's graph to another.
     pub fn reset(&mut self) {
         self.nodes.clear();
         self.jobs.clear();
@@ -668,18 +491,8 @@ impl Cluster {
 
         self.track_build(&summary, completed);
 
-        let stale_after = self.metrics_stale_after;
         for node in self.nodes.values_mut() {
-            // Stale metrics are a gap too, so a graph cannot flatline on a
-            // value that stopped being true a minute ago. Values are read out
-            // before pushing, because the push borrows the node mutably.
-            let (cpu, mem) = match node.fresh_metrics(stale_after) {
-                Some(r) => (Some(r.cpu.total_busy_pct), r.mem.used_pct()),
-                None => (None, None),
-            };
             let slots = node.slot_pct();
-            node.cpu_history.push(cpu);
-            node.mem_history.push(mem);
             node.slots_history.push(slots);
         }
     }
@@ -1026,53 +839,6 @@ impl Cluster {
         }
     }
 
-    /// Apply the outcome of one agent poll.
-    pub fn apply_resource(&mut self, host_id: u32, result: ResourceResult) {
-        // Only for nodes the scheduler told us about: an agent answering for a
-        // host that has left the cluster is not something to display.
-        let Some(node) = self.nodes.get_mut(&host_id) else {
-            return;
-        };
-
-        match result {
-            ResourceResult::Ok(snapshot) => {
-                node.identity_mismatch = !hostnames_agree(node.name(), &snapshot.hostname);
-                if node.identity_mismatch {
-                    tracing::warn!(
-                        "node {} (host id {host_id}) answered with hostname {:?}",
-                        node.name(),
-                        snapshot.hostname
-                    );
-                }
-                node.resources = Some(*snapshot);
-                node.resources_at = Some(Instant::now());
-                node.resource_state = ResourceState::Ok;
-            }
-            ResourceResult::Unreachable(reason) => {
-                // Keep any previous snapshot: staleness is shown separately, and
-                // the last known values are more useful than a blank row.
-                node.resource_state = ResourceState::NoAgent { reason };
-            }
-            ResourceResult::Bad(reason) => {
-                node.resource_state = ResourceState::Error { reason };
-            }
-        }
-    }
-
-    /// Nodes worth polling, as `(host id, address)`.
-    ///
-    /// Offline nodes are skipped — polling a machine the scheduler has already
-    /// lost wastes a timeout every interval.
-    pub fn poll_targets(&self) -> Vec<(u32, String)> {
-        self.nodes
-            .values()
-            .filter_map(|n| {
-                let ip = n.stats.ip.as_deref()?;
-                (!ip.is_empty() && ip != "?").then(|| (n.host_id, ip.to_owned()))
-            })
-            .collect()
-    }
-
     /// The node a `MON_STATS` record belongs to, created if this is the first
     /// we have heard of it.
     ///
@@ -1100,14 +866,6 @@ impl Cluster {
                 s.total_slots += node.max_jobs();
             }
             s.used_slots += node.current_jobs();
-
-            if node.fresh_metrics(self.metrics_stale_after).is_some() {
-                s.nodes_with_metrics += 1;
-            } else if node.has_agent() {
-                s.nodes_metrics_stale += 1;
-            } else {
-                s.nodes_without_agent += 1;
-            }
         }
         for job in self.jobs.values() {
             match job.state {
@@ -1173,20 +931,6 @@ impl Cluster {
 
 /// A node slower than this fraction of the cluster median is called out.
 const SLOW_OUTLIER_FRACTION: f64 = 0.5;
-
-/// Whether a scheduler-reported node name and an agent hostname plausibly
-/// describe the same machine.
-///
-/// Compared case-insensitively and on the first label only, because one side
-/// routinely has a domain the other lacks (`build01` vs `build01.corp.example`).
-pub fn hostnames_agree(scheduler_name: &str, agent_hostname: &str) -> bool {
-    // An unknown name is not evidence of a mismatch.
-    if scheduler_name.is_empty() || scheduler_name == "?" || agent_hostname.is_empty() {
-        return true;
-    }
-    let short = |s: &str| s.split('.').next().unwrap_or(s).to_ascii_lowercase();
-    short(scheduler_name) == short(agent_hostname)
-}
 
 #[cfg(test)]
 mod tests {
@@ -1970,200 +1714,5 @@ mod tests {
         c.apply(stats(2, &node_blob("build02", 4)));
         let names: Vec<&str> = c.nodes_sorted().iter().map(|n| n.name()).collect();
         assert_eq!(names, ["build01", "build02", "build03"]);
-    }
-
-    // ---- Phase 3: agent metrics ----
-
-    fn snapshot(hostname: &str, cpu_pct: f32, mem_used_kib: u64) -> Box<Snapshot> {
-        Box::new(Snapshot {
-            schema: icecc_metrics::SCHEMA_VERSION,
-            agent_version: "0.1.0".into(),
-            hostname: hostname.into(),
-            addresses: vec!["10.0.0.1".into()],
-            uptime_secs: 100,
-            sampled_unix_ms: 1,
-            sample_interval_ms: 1000,
-            cpu: icecc_metrics::Cpu {
-                cores: 8,
-                total_busy_pct: cpu_pct,
-                per_core_busy_pct: vec![cpu_pct; 8],
-                freq_mhz: vec![3200; 8],
-            },
-            mem: icecc_metrics::Mem {
-                total_kib: 1000,
-                available_kib: 1000 - mem_used_kib,
-                free_kib: 1000 - mem_used_kib,
-                buffers_kib: 0,
-                cached_kib: 0,
-                swap_total_kib: 0,
-                swap_free_kib: 0,
-            },
-            load: icecc_metrics::Load {
-                one: 4.0,
-                five: 3.0,
-                fifteen: 2.0,
-                runnable: 4,
-                total_procs: 500,
-            },
-            thermal: icecc_metrics::Thermal {
-                cpu_celsius: Some(71.0),
-                cpu_source: Some("coretemp/Package id 0".into()),
-                sensors: vec![],
-            },
-            net: icecc_metrics::Net {
-                rx_bytes_per_sec: 1_200_000,
-                tx_bytes_per_sec: 4_800_000,
-                interfaces: vec![],
-            },
-        })
-    }
-
-    #[test]
-    fn a_good_poll_populates_the_metrics_the_scheduler_cannot_provide() {
-        let mut c = cluster_with_two_nodes();
-        // The scheduler gave us no CPU or memory percentage, by construction.
-        assert_eq!(c.nodes[&1].cpu_pct(), None);
-        assert_eq!(c.nodes[&1].mem_pct(), None);
-
-        c.apply_resource(1, ResourceResult::Ok(snapshot("build01", 82.0, 700)));
-
-        let node = &c.nodes[&1];
-        assert_eq!(node.cpu_pct(), Some(82.0));
-        assert_eq!(node.mem_pct(), Some(70.0));
-        assert_eq!(node.temp_c(), Some(71.0));
-        assert_eq!(node.cores(), Some(8));
-        assert_eq!(node.load_avg_1(), Some(4.0));
-        assert_eq!(node.load_per_core(), Some(0.5));
-        assert_eq!(node.resource_state, ResourceState::Ok);
-        assert!(node.has_agent());
-        assert!(!node.identity_mismatch);
-    }
-
-    #[test]
-    fn a_node_without_an_agent_is_a_deployment_gap_not_an_error() {
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(1, ResourceResult::Unreachable("Connection refused".into()));
-
-        let node = &c.nodes[&1];
-        assert!(!node.has_agent());
-        assert_eq!(node.cpu_pct(), None);
-        assert_eq!(node.resource_state.label(), "no agent");
-        assert_eq!(node.resource_state.reason(), Some("Connection refused"));
-
-        let s = c.summary();
-        assert_eq!(s.nodes_without_agent, 2, "neither node has answered");
-        assert_eq!(s.nodes_with_metrics, 0);
-    }
-
-    #[test]
-    fn an_unusable_agent_is_distinguished_from_a_missing_one() {
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(1, ResourceResult::Bad("agent returned HTTP 404".into()));
-        assert_eq!(c.nodes[&1].resource_state.label(), "error");
-        assert_eq!(
-            c.nodes[&1].resource_state.reason(),
-            Some("agent returned HTTP 404")
-        );
-    }
-
-    #[test]
-    fn a_failed_poll_keeps_the_last_known_values() {
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(1, ResourceResult::Ok(snapshot("build01", 82.0, 700)));
-        c.apply_resource(1, ResourceResult::Unreachable("timed out".into()));
-
-        // Last known reading survives so the row does not go blank; the state
-        // field is what tells the user it is no longer current.
-        assert_eq!(c.nodes[&1].cpu_pct(), Some(82.0));
-        assert_eq!(c.nodes[&1].resource_state.label(), "no agent");
-    }
-
-    #[test]
-    fn metrics_go_stale_on_the_monitors_clock() {
-        let mut c = cluster_with_two_nodes();
-        c.metrics_stale_after = Duration::from_millis(1);
-        c.apply_resource(1, ResourceResult::Ok(snapshot("build01", 82.0, 700)));
-        assert!(c.nodes[&1].fresh_metrics(c.metrics_stale_after).is_some());
-
-        std::thread::sleep(Duration::from_millis(5));
-        assert!(c.nodes[&1].metrics_stale(c.metrics_stale_after));
-        assert!(c.nodes[&1].fresh_metrics(c.metrics_stale_after).is_none());
-        // But the values are still there to display as last-known.
-        assert_eq!(c.nodes[&1].cpu_pct(), Some(82.0));
-
-        let s = c.summary();
-        assert_eq!(s.nodes_metrics_stale, 1);
-        assert_eq!(s.nodes_with_metrics, 0);
-        assert_eq!(s.nodes_without_agent, 1, "the other node never answered");
-    }
-
-    #[test]
-    fn an_agent_answering_for_the_wrong_host_is_flagged() {
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(1, ResourceResult::Ok(snapshot("someone-else", 50.0, 500)));
-        assert!(
-            c.nodes[&1].identity_mismatch,
-            "reaching the wrong machine must be visible, not silently graphed"
-        );
-    }
-
-    #[test]
-    fn a_domain_suffix_is_not_a_mismatch() {
-        assert!(hostnames_agree("build01", "build01.corp.example"));
-        assert!(hostnames_agree("build01.corp.example", "build01"));
-        assert!(hostnames_agree("BUILD01", "build01"));
-        assert!(!hostnames_agree("build01", "build02"));
-        // An unknown scheduler name is not evidence of anything.
-        assert!(hostnames_agree("?", "build01"));
-        assert!(hostnames_agree("", "build01"));
-    }
-
-    #[test]
-    fn polls_go_to_the_scheduler_reported_address_skipping_offline_nodes() {
-        let mut c = Cluster::new();
-        c.apply(connected());
-        c.apply(stats(1, "Name:build01\nIP:10.0.0.11\nMaxJobs:8\n"));
-        c.apply(stats(2, "Name:build02\nIP:10.0.0.12\nMaxJobs:8\n"));
-        c.apply(stats(3, "Name:build03\nMaxJobs:8\n")); // no IP yet
-
-        let mut targets = c.poll_targets();
-        targets.sort();
-        assert_eq!(
-            targets,
-            vec![(1, "10.0.0.11".to_owned()), (2, "10.0.0.12".to_owned())]
-        );
-
-        c.apply(stats(2, "State:Offline\n"));
-        assert_eq!(c.poll_targets(), vec![(1, "10.0.0.11".to_owned())]);
-    }
-
-    #[test]
-    fn metrics_for_an_unknown_host_id_are_ignored() {
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(999, ResourceResult::Ok(snapshot("ghost", 50.0, 500)));
-        assert!(!c.nodes.contains_key(&999));
-    }
-
-    #[test]
-    fn reconnect_drops_metrics_because_host_ids_are_reassigned() {
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(1, ResourceResult::Ok(snapshot("build01", 82.0, 700)));
-        c.apply(connected());
-        assert!(c.nodes.is_empty());
-    }
-
-    #[test]
-    fn a_departed_node_is_not_counted_in_agent_coverage() {
-        // Agent coverage is a rollout question — "how many of the machines
-        // that are here are reporting" — so a machine that has left is not a
-        // gap in it.
-        let mut c = cluster_with_two_nodes();
-        c.apply_resource(1, ResourceResult::Ok(snapshot("build01", 82.0, 700)));
-        c.apply(stats(2, "State:Offline\n"));
-
-        let s = c.summary();
-        assert_eq!(s.nodes_online, 1);
-        assert_eq!(s.nodes_with_metrics, 1);
-        assert_eq!(s.nodes_without_agent, 0);
     }
 }

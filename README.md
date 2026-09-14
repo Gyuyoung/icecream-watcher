@@ -54,11 +54,11 @@ this table shows both on the same row: an empty `Send` says the answer is known
 and it is none, while a `—` says there is no figure to show at all.
 The name column is sized to the cluster rather than to a fixed maximum, so
 nothing is padded out with cells that nothing fills.
-A machine's CPU, memory and temperature are its own business and belong in the
-detail view, which also holds how fast one file is on a node and how that
-compares with its peers. `build05` and `build07` are finishing nothing because
-nothing is being sent to them, which the `0` says and the empty meter beside it
-confirms. Nothing on this screen needs an agent on the nodes.
+How fast one file is on a node, and how that compares with its peers, is in the
+detail view. `build05` and `build07` are finishing nothing because nothing is
+being sent to them, which the `0` says and the empty meter beside it confirms.
+Everything here comes from the scheduler, so there is nothing to install on the
+build nodes.
 
 **A node that goes offline leaves the list**, and comes back by itself when its
 daemon reattaches. Host ids are per *connection* — the scheduler issues a new one
@@ -146,13 +146,11 @@ Esc/q back  ↑↓/jk scroll  Ctrl-C quit   build02
 ```
 
 Below the fold the `NODE` section continues with free memory and the job counters
-since this monitor connected, and ends with a footnote naming the agent, where
-one is running. This is where a machine's own figures live: the load average
-divided by the cores the agent reports, because a load average is absolute and a
-column of them would invite a comparison that cannot be made. Anything wrong
-with the node — no ack
-from the scheduler, an agent that answered with nonsense, a hostname that does
-not match — is stated at the top, before the numbers it would explain.
+since this monitor connected. This is where a machine's own figures live — the
+load average, for one, because a load average is absolute and a column of them
+in the overview would invite a comparison that cannot be made. Anything wrong
+with the node, such as no ack from the scheduler, is stated at the top, before
+the numbers it would explain.
 
 Only jobs this monitor saw *start* appear in the list. The scheduler replays node
 stats when a monitor logs in but not jobs, so anything already compiling when you
@@ -167,13 +165,6 @@ the scheduler protocol is implemented natively.
 ```sh
 cargo build --release
 ./target/release/icecream-watcher
-```
-
-For the agent, a static build is easiest to copy onto build nodes:
-
-```sh
-rustup target add x86_64-unknown-linux-musl
-cargo build --release --target x86_64-unknown-linux-musl -p icecream-watcher-agent
 ```
 
 ## Use
@@ -199,40 +190,21 @@ Other flags:
 | `--record FILE` | save the raw protocol stream for offline replay |
 | `--replay FILE` | replay a capture instead of connecting |
 | `--log-file FILE` | write diagnostics (never to the terminal, which would corrupt the display) |
-| `--agent-port PORT` | where node agents listen (default 9765) |
-| `--poll-interval MS` | how often to poll agents (default 1000) |
-| `--poll-timeout MS` | per-node deadline (default 750) |
-| `--stale-after MS` | when to call metrics stale (default 5000) |
-| `--no-agents` | scheduler data only; do not poll agents at all |
 | `--colors-256` | round the load gradient to the 216-colour cube |
 | `--job-timeout SECS` | forget a job whose completion never arrives (default 1800; 0 disables) |
 | `--reconnect-max-delay SECS` | ceiling on the reconnect backoff (default 30) |
 
-## Node metrics
+## What is not here
 
-CPU, memory, temperature, frequency, swap, uptime and network throughput are not
-in the Icecream protocol at all, and what *is* there only updates when a node's
-load shifts by 10 %. They come from `icecream-watcher-agent`, one small read-only
-service per build node:
+CPU utilisation, memory, temperature, frequency, swap and network throughput are
+not in the Icecream monitor protocol, so this does not show them. Getting them
+would mean running something on every build node, which is a different tool with
+a different deployment story — and the point of this one is that watching a
+cluster costs nothing but a TCP connection to the scheduler.
 
-```sh
-# on each build node
-icecream-watcher-agent            # serves http://0.0.0.0:9765/metrics, samples once a second
-curl -s localhost:9765/metrics | head -c 200
-icecream-watcher-agent --once     # print one snapshot and exit
-```
-
-See [contrib/systemd/](contrib/systemd/) for a hardened unit file and deployment
-notes. `icecream-watcher` finds agents by itself — it polls each node at the address the
-scheduler reports, so there is nothing to configure per node.
-
-**The agent is optional and the overview does not need it.** Every column on the
-main screen comes from the scheduler, including `File/s`, which is counted
-from finished jobs rather than from anything installed on the node. What
-an agent adds is the machine's own side of the story — why a node is slow, not
-just that it is — and it appears in the detail view. A node without one shows
-`no agent here` there and is otherwise unaffected. `--no-agents` turns polling
-off entirely.
+What the protocol does carry turns out to answer most of the question anyway.
+`File/s` is counted from job completions, so how fast a node actually is comes
+out of the work it finishes rather than out of a sensor reading.
 
 ### Keys
 
@@ -283,9 +255,7 @@ its node through a re-sort.
   no natural maximum — and the peak is printed next to them so a flat graph at
   full height cannot be mistaken for a queue at some limit.
 - Badges after a node name: `down`, `local` (refuses remote jobs), `no ack` (the
-  scheduler has pinged it and is still waiting), `stale` (its agent answered
-  before and has gone quiet), `agent?` (something answered on the agent port but
-  was unusable), `host?` (the agent there calls itself something else, so this
+  scheduler has pinged it and is still waiting), `local` (it refuses remote jobs
   row's metrics may belong to another machine).
 - Cumulative counters are **since connect**. Job ids only mean anything within
   one scheduler session, so a reconnect necessarily resets them.
@@ -340,8 +310,7 @@ as badly — and the count is logged rather than hidden.
 |---|---|
 | `crates/icecc-proto` | the scheduler monitor protocol: framing, handshake, message decoders, discovery. No UI. |
 | `crates/icecc-metrics` | the node metrics wire format, plus a minimal client |
-| `crates/icecc-model` | cluster state, job accounting, agent metrics |
-| `crates/icecream-watcher-agent` | `icecream-watcher-agent`: `/proc` and `/sys` sampling and serving |
+| `crates/icecc-model` | cluster state and job accounting |
 | `crates/icecream-watcher` | the TUI |
 
 `icecc-proto` is deliberately independent of the rest and is the piece most

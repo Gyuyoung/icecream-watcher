@@ -3,7 +3,7 @@
 //! Samples are pushed on a timer rather than per event, so a node that goes
 //! quiet still advances through the buffer instead of freezing its graph. A
 //! sample we could not take is stored as `NaN`, which renders as a gap: a node
-//! whose agent was down for ten seconds must not look like a node that was idle
+//! that went unreported for ten seconds must not look like a node that was idle
 //! for ten seconds.
 
 use std::collections::VecDeque;
@@ -365,7 +365,7 @@ mod tests {
     fn a_gap_is_not_a_zero() {
         let mut h = History::new(4);
         h.push(Some(50.0));
-        h.push(None); // agent was down
+        h.push(None); // nothing reported
         h.push(Some(60.0));
         let w = h.window(3);
         assert_eq!(w[0], 50.0);

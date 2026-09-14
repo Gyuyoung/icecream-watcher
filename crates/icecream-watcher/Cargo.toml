@@ -13,7 +13,6 @@ path = "src/main.rs"
 
 [dependencies]
 icecc-proto = { workspace = true }
-icecc-metrics = { workspace = true }
 icecc-model = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "signal"] }
 tracing = { workspace = true }

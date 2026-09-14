@@ -3,15 +3,16 @@
 use std::cmp::Ordering;
 use std::time::{Duration, Instant};
 
-use icecc_model::{Cluster, Node, ResourceResult};
+use icecc_model::{Cluster, Node};
 use icecc_proto::Update;
 
 /// How often the screen may repaint. Events can burst — a login replay of 100
 /// nodes arrives at once — so redraws are coalesced rather than done per event.
 pub const FRAME_INTERVAL: Duration = Duration::from_millis(100);
 
-/// How often history series advance. One sample per second, matching the
-/// agent's own sampling rate.
+/// How often history series advance. One sample per second, so a graph's
+/// horizontal axis is wall-clock time rather than however many frames were
+/// drawn.
 pub const HISTORY_INTERVAL: Duration = Duration::from_secs(1);
 
 /// What the node table is ordered by.
@@ -111,11 +112,6 @@ impl App {
         }
         self.cluster.apply(update);
         self.prune_selection();
-        self.dirty = true;
-    }
-
-    pub fn apply_resource(&mut self, host_id: u32, result: ResourceResult) {
-        self.cluster.apply_resource(host_id, result);
         self.dirty = true;
     }
 
@@ -406,7 +402,6 @@ pub fn classify(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icecc_metrics::Snapshot;
     use icecc_proto::{Event, SchedulerTarget};
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -428,50 +423,6 @@ mod tests {
         })
     }
 
-    fn snapshot(hostname: &str, cpu: f32, mem_used_kib: u64, temp: f32) -> Box<Snapshot> {
-        Box::new(Snapshot {
-            schema: icecc_metrics::SCHEMA_VERSION,
-            agent_version: "0.1.0".into(),
-            hostname: hostname.into(),
-            addresses: vec![],
-            uptime_secs: 1,
-            sampled_unix_ms: 1,
-            sample_interval_ms: 1000,
-            cpu: icecc_metrics::Cpu {
-                cores: 8,
-                total_busy_pct: cpu,
-                per_core_busy_pct: vec![cpu; 8],
-                freq_mhz: vec![],
-            },
-            mem: icecc_metrics::Mem {
-                total_kib: 1000,
-                available_kib: 1000 - mem_used_kib,
-                free_kib: 1000 - mem_used_kib,
-                buffers_kib: 0,
-                cached_kib: 0,
-                swap_total_kib: 0,
-                swap_free_kib: 0,
-            },
-            load: icecc_metrics::Load {
-                one: cpu / 10.0,
-                five: 1.0,
-                fifteen: 1.0,
-                runnable: 1,
-                total_procs: 10,
-            },
-            thermal: icecc_metrics::Thermal {
-                cpu_celsius: Some(temp),
-                cpu_source: Some("coretemp/Package id 0".into()),
-                sensors: vec![],
-            },
-            net: icecc_metrics::Net {
-                rx_bytes_per_sec: 0,
-                tx_bytes_per_sec: 0,
-                interfaces: vec![],
-            },
-        })
-    }
-
     /// Three nodes with distinct metrics, so every sort key has a clear answer.
     fn app_with_three() -> App {
         let mut app = App::new();
@@ -488,9 +439,6 @@ mod tests {
             3,
             "Name:build03\nIP:10.0.0.3\nMaxJobs:8\nSpeed:2000\nLoad:500\n",
         ));
-        app.apply_resource(1, ResourceResult::Ok(snapshot("build01", 20.0, 300, 50.0)));
-        app.apply_resource(2, ResourceResult::Ok(snapshot("build02", 90.0, 100, 80.0)));
-        app.apply_resource(3, ResourceResult::Ok(snapshot("build03", 50.0, 900, 65.0)));
         // Measured throughput, fastest first: build01, build03, build02.
         for (host, user_msec) in [(1u32, 250u32), (2, 750), (3, 500)] {
             for n in 0..6u32 {
@@ -830,7 +778,7 @@ mod tests {
         assert!(app.cluster.pending_history.is_empty());
         app.tick_history();
         assert_eq!(app.cluster.pending_history.len(), 1);
-        assert_eq!(app.cluster.nodes[&1].cpu_history.last(), Some(20.0));
+        assert!(app.cluster.nodes[&1].slots_history.last().is_some());
     }
 
     #[test]

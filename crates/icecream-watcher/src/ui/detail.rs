@@ -9,7 +9,7 @@
 //! layout, so a 128-core machine and a 2-core one both work and nothing is
 //! silently cut off.
 
-use icecc_model::{Cluster, Job, JobState, Node, ResourceState};
+use icecc_model::{Cluster, Job, JobState, Node};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -75,8 +75,6 @@ pub fn lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>>
     out.extend(jobs_lines(node, cluster, width));
     out.push(Line::raw(""));
     out.extend(node_lines(node, cluster));
-    out.push(Line::raw(""));
-    out.extend(agent_lines(node));
 
     out
 }
@@ -84,30 +82,11 @@ pub fn lines(node: &Node, cluster: &Cluster, width: usize) -> Vec<Line<'static>>
 /// Anything wrong with the node, stated before the numbers it would explain.
 fn status_lines(node: &Node) -> Vec<Line<'static>> {
     let mut out = Vec::new();
-    if node.identity_mismatch {
-        if let Some(agent) = node.resources.as_ref().map(|r| r.hostname.clone()) {
-            out.push(warn(
-                "WRONG HOST?",
-                &format!(
-                    "the agent at {} calls itself {agent:?}, so its readings may be another machine's",
-                    node.ip()
-                ),
-            ));
-        }
-    }
     if node.suspect() {
         out.push(warn(
             "NO ACK",
             "the scheduler has pinged this node and is still waiting for an answer",
         ));
-    }
-    // A missing agent is a deployment gap, not a fault, and nothing on this
-    // panel depends on it any more — it belongs in the agent footnote, not at
-    // the top as though it explained a blank screen.
-    if matches!(node.resource_state, ResourceState::Error { .. }) {
-        if let Some(reason) = node.resource_state.reason() {
-            out.push(warn("AGENT ERROR", reason));
-        }
     }
     if !node.accepts_remote() {
         out.push(note(
@@ -353,8 +332,11 @@ fn node_lines(node: &Node, cluster: &Cluster) -> Vec<Line<'static>> {
 /// This is where the figure belongs rather than in the overview: a load average
 /// is absolute, so 8.3 is a saturated eight-core machine and a bored
 /// sixty-four-core one, and a column of them invites exactly the comparison
-/// that cannot be made. Here there is room to divide it by the cores the agent
-/// reports, and to say so.
+/// that cannot be made. Here there is room to give it the space to be read as
+/// the three-number series it is.
+///
+/// It is not divided by the core count, because the monitor protocol does not
+/// carry one — `MaxJobs` is a configured slot count and can be set to anything.
 fn load_averages(node: &Node) -> String {
     let stats = &node.stats;
     let (Some(one), Some(five), Some(ten)) =
@@ -362,15 +344,7 @@ fn load_averages(node: &Node) -> String {
     else {
         return UNKNOWN.to_owned();
     };
-    let scale = match node.cores() {
-        Some(cores) if cores > 0 => {
-            format!("   ({:.2} per core, over {cores})", one / cores as f64)
-        }
-        // No agent, so no core count: the figure stands unqualified rather than
-        // being divided by a number nobody sent.
-        _ => String::new(),
-    };
-    format!("{one:.2}  {five:.2}  {ten:.2}   (1 / 5 / 10 min){scale}")
+    format!("{one:.2}  {five:.2}  {ten:.2}   (1 / 5 / 10 min)")
 }
 
 /// `FreeMem`, which the protocol documents as MiB but not every daemon sends
@@ -395,47 +369,6 @@ fn free_memory(node: &Node) -> String {
     } else {
         format!("{mib} MiB available")
     }
-}
-
-/// A footnote, not a section: the agent no longer feeds this panel. It is what
-/// colours the overview's `JOBS` meters, so there has to be somewhere to see
-/// the figure behind the colour.
-fn agent_lines(node: &Node) -> Vec<Line<'static>> {
-    let mut out = vec![heading("AGENT")];
-
-    match node.resources.as_ref() {
-        Some(res) => {
-            out.push(field(
-                "reported",
-                format!(
-                    "{:.0}% CPU, {} memory in use — the CPU figure colours the meter",
-                    res.cpu.total_busy_pct,
-                    node.mem_pct()
-                        .map(|p| format!("{p:.0}%"))
-                        .unwrap_or_else(|| UNKNOWN.into()),
-                ),
-            ));
-            out.push(field(
-                "agent",
-                format!(
-                    "icecream-watcher-agent {} on {}, last answered {}",
-                    res.agent_version,
-                    res.hostname,
-                    match node.resources_at {
-                        Some(at) => format!("{:.1} s ago", at.elapsed().as_secs_f32()),
-                        None => UNKNOWN.to_owned(),
-                    }
-                ),
-            ));
-        }
-        None => {
-            out.push(Line::from(Span::styled(
-                "    no agent here — the overview cannot badge this node as CPU- or memory-bound",
-                Style::default().add_modifier(Modifier::DIM),
-            )));
-        }
-    }
-    out
 }
 
 // ---------------------------------------------------------------- helpers

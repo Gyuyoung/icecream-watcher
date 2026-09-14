@@ -2,9 +2,7 @@
 resolver = "2"
 members = [
     "crates/icecc-proto",
-    "crates/icecc-metrics",
     "crates/icecc-model",
-    "crates/icecream-watcher-agent",
     "crates/icecream-watcher",
 ]
 
@@ -17,7 +15,6 @@ repository = "https://github.com/gyuyoung/icecream-watcher"
 
 [workspace.dependencies]
 icecc-proto = { path = "crates/icecc-proto" }
-icecc-metrics = { path = "crates/icecc-metrics" }
 icecc-model = { path = "crates/icecc-model" }
 tokio = { version = "1", default-features = false }
 tracing = "0.1"
