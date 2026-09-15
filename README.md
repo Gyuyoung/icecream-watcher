@@ -210,7 +210,7 @@ out of the work it finishes rather than out of a sensor reading.
 
 | Key | Action |
 |---|---|
-| `q`, `Esc` | close the help overlay, leave the detail view, then ask to quit |
+| `q`, `Esc` | back out one step: the help overlay, the detail view, the highlighted row — then ask to quit |
 | `Ctrl-C` | quit, from wherever you are, without asking |
 | `↑` / `k`, `↓` / `j` | move the selection, or scroll the detail view |
 | `PgUp` / `PgDn` | move or scroll ten rows |

@@ -1450,7 +1450,7 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("  ↓ / j        move down"),
         Line::from("  PgUp / PgDn  move ten rows"),
         Line::from("  Enter        open or close the node detail view"),
-        Line::from("  q, Esc       close this, leave the detail view, then ask to quit"),
+        Line::from("  q, Esc       back out one step; at the last one, ask to quit"),
         Line::from("  r            redraw; while disconnected, retry now"),
         Line::from("  s            cycle sort"),
         Line::from("  n / i / p    sort by name / jobs / perf"),
@@ -1466,12 +1466,11 @@ fn help_overlay(frame: &mut Frame, area: Rect) {
         Line::from("               green → yellow → red; every row's bar is one width"),
         Line::from("  Compiling    the file this node has been working on longest,"),
         Line::from("               with +n for the other jobs filling its slots"),
-        Line::from("  Receive      jobs compiled here for the cluster, since connect"),
-        Line::from("  Send         jobs submitted from here; blank means a pure server"),
+        Line::from("  Send/Receive jobs submitted from here / compiled here for the"),
+        Line::from("               cluster, both since connect; blank Send is a pure server"),
         Line::from("  File/s       files this node is finishing, over ten seconds;"),
         Line::from("               the column adds up to Rate in the band above"),
-        Line::from("  —            not measured, or not reported by this node"),
-        Line::from("  blank count  none, which is different from — : the answer is known"),
+        Line::from("  —            not measured; a blank count means a known zero"),
         Line::from("  dim row      idle"),
         Line::from("  node colour  keyed by hostname, so a node keeps it across re-sorts"),
     ];
@@ -2424,6 +2423,14 @@ mod tests {
         // not a zero.
         assert!(out.contains("this row opens"), "{out}");
         assert!(out.contains("not measured"), "{out}");
+
+        // The overlay is clamped to the terminal rather than scrolled, so a
+        // line too many is not an error — it is silently cut off the bottom,
+        // which has happened twice. The last line is the canary.
+        assert!(
+            out.contains("keeps it across re-sorts"),
+            "the help overlay is one line too tall for 30 rows:\n{out}"
+        );
     }
 
     #[test]
@@ -3290,6 +3297,10 @@ mod tests {
         app.on_key(crate::app::Key::Back);
         assert!(!app.detail);
         assert!(!app.should_quit, "leaving the detail view must not quit");
+
+        app.on_key(crate::app::Key::Back);
+        assert!(app.selected.is_none(), "the row it opened is a layer too");
+        assert!(!app.confirm_quit, "dropping the highlight must not ask yet");
 
         app.on_key(crate::app::Key::Back);
         assert!(!app.should_quit, "the last layer asks first");

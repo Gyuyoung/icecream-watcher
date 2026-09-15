@@ -263,14 +263,25 @@ impl App {
             Key::ForceQuit => self.should_quit = true,
             Key::Quit | Key::Back => {
                 // Both unwind one layer at a time: overlay, then detail, then
-                // the session. Quitting straight from a detail view would be a
-                // surprise — the way out of a view is the same key twice, not
-                // the end of the session.
+                // the selection, then the session. Quitting straight out of a
+                // view would be a surprise — the way out of one is the same
+                // key again, not the end of the session.
+                //
+                // A highlighted row is a layer like any other. Closing a
+                // detail view leaves its row still picked out, and the next
+                // press was answering "quit?" while the screen still showed
+                // something selected — the key had visibly undone one step and
+                // then skipped the one left on screen. Dropping the highlight
+                // first means the prompt only ever appears over a screen with
+                // nothing left to back out of.
                 if self.show_help {
                     self.show_help = false;
                     self.dirty = true;
                 } else if self.detail {
                     self.detail = false;
+                    self.dirty = true;
+                } else if self.selected.is_some() {
+                    self.selected = None;
                     self.dirty = true;
                 } else {
                     self.confirm_quit = true;
@@ -643,6 +654,12 @@ mod tests {
             app.on_key(leave);
             assert!(!app.detail, "{leave:?} should close the view");
             assert!(!app.should_quit, "{leave:?} should not end the session");
+            assert!(app.selected.is_some(), "the row stays picked out");
+
+            // The row it opened is still highlighted, and that is a layer too.
+            app.on_key(leave);
+            assert!(app.selected.is_none(), "{leave:?} should drop the row");
+            assert!(!app.confirm_quit, "{leave:?} asked too early");
 
             // ...and then it means quit, once the prompt has been answered.
             app.on_key(leave);
@@ -650,6 +667,40 @@ mod tests {
             app.on_key(Key::Confirm);
             assert!(app.should_quit, "{leave:?} then y quits");
         }
+    }
+
+    #[test]
+    fn a_highlighted_row_is_dropped_before_the_quit_prompt_appears() {
+        // Without this step the prompt came up over a screen that still showed
+        // a row picked out: the key had visibly undone one layer and then
+        // skipped the one left on screen.
+        for leave in [Key::Quit, Key::Back] {
+            let mut app = App::new();
+            app.apply(connected());
+            app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\n"));
+            app.on_key(Key::Down);
+            assert!(app.selected.is_some(), "{leave:?} needs a row to drop");
+
+            app.on_key(leave);
+            assert!(app.selected.is_none(), "{leave:?} should drop the row");
+            assert!(!app.confirm_quit, "{leave:?} should not also ask");
+            assert!(!app.detail, "{leave:?} should not open anything");
+
+            app.on_key(leave);
+            assert!(app.confirm_quit, "{leave:?} on a bare screen asks");
+        }
+    }
+
+    #[test]
+    fn nothing_selected_still_asks_on_the_first_press() {
+        // The extra step is a layer, not a toll: a screen with nothing picked
+        // out has nothing to back out of.
+        let mut app = App::new();
+        app.apply(connected());
+        app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\n"));
+        assert!(app.selected.is_none());
+        app.on_key(Key::Back);
+        assert!(app.confirm_quit);
     }
 
     #[test]
@@ -661,17 +712,22 @@ mod tests {
         app.apply(connected());
         app.apply(stats(1, "Name:build01\nIP:10.0.0.1\nMaxJobs:8\n"));
         app.apply(stats(2, "Name:build02\nIP:10.0.0.2\nMaxJobs:8\n"));
-        app.on_key(Key::Down);
-        let selected = app.selected;
         app.set_sort(SortKey::Perf);
 
+        // Twice: the first drops the highlight, the second has nothing left to
+        // back out of and asks.
+        app.on_key(Key::Down);
+        app.on_key(Key::Quit);
         app.on_key(Key::Quit);
         assert!(app.confirm_quit);
 
         for ignored in [Key::Down, Key::Up, Key::Enter, Key::CycleSort] {
             app.on_key(ignored);
         }
-        assert_eq!(app.selected, selected, "the list moved under the prompt");
+        assert!(
+            app.selected.is_none(),
+            "the list moved under the prompt — Down would have picked a row"
+        );
         assert_eq!(
             app.sort,
             SortKey::Perf,
