@@ -67,15 +67,23 @@ fn secondary() -> Color {
 /// four things a heading could be confused with — the two frames it sits inside
 /// and the other text on the screen, the white figures and the grey notes —
 /// under a luminance floor of 155, the same floor the node names are held to.
-/// Mint comes out furthest: 188 from the purple frame, 131 from the cyan one,
-/// 208 from white and 123 from the grey.
+/// Mint came out furthest and held the job for a while.
 ///
-/// Green does mean "healthy" in the load ramp, and the nearest ramp stop is 95
-/// away — a deeper, darker green than this. A heading is chrome in a fixed
-/// position that never changes, so unlike a bar it cannot be misread as a
-/// reading that moved.
+/// It is now orange, which is asked for rather than derived: warm was wanted on
+/// the words. The search still decides the shade, over the warm band instead of
+/// the whole wheel, and the four distances come out with room to spare — 193
+/// from the purple frame, 223 from the cyan one, 199 from white and 132 from
+/// the grey, at luminance 187.
+///
+/// What warm costs is distance from the load ramp. Mint kept 95, a deeper green
+/// than the ramp's own; this keeps 44, and no warm colour does much better —
+/// every colour that is warm, readable on black and clear of the grey lies near
+/// the ramp's path, because the blue channel is what the ramp gives up and it
+/// is also what distance from grey is bought with. The argument that admitted
+/// mint admits this too: a heading is chrome in a fixed position that never
+/// changes, so unlike a bar it cannot be misread as a reading that moved.
 fn heading() -> Color {
-    widgets::rgb(0x55, 0xff, 0x88)
+    widgets::rgb(0xff, 0xb3, 0x47)
 }
 
 /// Shown when a metric is not available. Distinct from `0`.
