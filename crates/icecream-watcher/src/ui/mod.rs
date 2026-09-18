@@ -2216,9 +2216,13 @@ mod tests {
             // The colour a node is drawn in, read at the first cell of its
             // name rather than anywhere a badge or figure might sit.
             let first = name_colour(&app, 130, 30, &name);
-            assert!(
-                matches!(first, Color::Indexed(_)),
-                "{name} is not drawn in a node colour: {first:?}"
+            // Compared against the palette rather than against a representation:
+            // the colour is sent as 24-bit where the terminal has it and as a
+            // cube index where it does not, and the test is about neither.
+            assert_eq!(
+                first,
+                widgets::node_colour(&name),
+                "{name} is not drawn in its own node colour"
             );
             seen.insert(format!("{first:?}"));
         }

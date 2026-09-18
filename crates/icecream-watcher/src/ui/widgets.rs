@@ -256,6 +256,18 @@ pub fn heat(fraction: f32) -> Color {
     }
 }
 
+/// The RGB a cube index stands for, so a palette entry can be sent as colour
+/// rather than as a slot number.
+fn cube_colour(index: u8) -> (u8, u8, u8) {
+    const CHANNEL: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    let n = index - 16;
+    (
+        CHANNEL[(n / 36) as usize],
+        CHANNEL[((n % 36) / 6) as usize],
+        CHANNEL[(n % 6) as usize],
+    )
+}
+
 /// A stable colour for a node, derived from its name.
 ///
 /// Keyed by name rather than by row so a node keeps its colour when the list is
@@ -264,6 +276,19 @@ pub fn heat(fraction: f32) -> Color {
 ///
 /// With more nodes than colours, two will share one. This is a hint for the eye,
 /// not an identifier: the name is still the name.
+///
+/// The palette is kept as cube indices, which is the space it was searched in
+/// and the space its rules are written in, but an index is not what is sent.
+/// It goes out through [`rgb`] like every other colour chosen by hand here.
+///
+/// These were the one exception, and were reported as reading all of a colour
+/// on a terminal with a customised palette. A cube index is not the fixed thing
+/// it looks like: the 240 slots above the basic 16 are as remappable as slots 0
+/// and 15 are, and a theme that repaints them is repainting this list. It is
+/// the same argument [`foreground`] and [`background`] already make about white
+/// and black, applied to the one list that had been left out of it. Where
+/// 24-bit colour is off the index comes back anyway, because [`rgb`] rounds to
+/// the cube and these are exactly cube colours — so nothing changes there.
 pub fn node_colour(name: &str) -> Color {
     // FNV-1a. Small, and stable in a way `DefaultHasher` does not promise
     // across Rust versions — a colour that changed when the toolchain changed
@@ -273,7 +298,9 @@ pub fn node_colour(name: &str) -> Color {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    Color::Indexed(NODE_COLOURS[(hash % NODE_COLOURS.len() as u64) as usize])
+    let index = NODE_COLOURS[(hash % NODE_COLOURS.len() as u64) as usize];
+    let (r, g, b) = cube_colour(index);
+    rgb(r, g, b)
 }
 
 /// A duration at a glance: one unit, no padding.
