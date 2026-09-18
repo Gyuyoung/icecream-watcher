@@ -119,8 +119,8 @@ pub fn span(secs: u64) -> String {
 
 /// Colours used to tell one node from another.
 ///
-/// Chosen by searching the 6×6×6 colour cube for twelve entries that are as far
-/// apart as possible under three constraints, rather than picked by eye:
+/// Chosen by searching the 6×6×6 colour cube for entries that are as far apart
+/// as possible under three constraints, rather than picked by eye:
 ///
 /// * **no warm hues.** Red, orange, yellow and tan carry *state* in this UI — a
 ///   problem badge, a saturated metric, a hot sensor — and a healthy node that
@@ -130,8 +130,7 @@ pub fn span(secs: u64) -> String {
 ///   `(0, 95, 255)`, whose blue channel is at full while its luminance is 86,
 ///   and that node was reported as unreadable. The floor is on *luminance*,
 ///   because that is what "dark on black" means — a saturated blue can max a
-///   channel and still be dim. It is now 155, the highest the cube allows while
-///   still placing twelve colours three steps apart.
+///   channel and still be dim. It is now 185.
 /// * **no greys**, which already mean "no measurement".
 ///
 /// The first attempt at this list was picked by hand and paired 39 with 45 —
@@ -141,7 +140,17 @@ pub fn span(secs: u64) -> String {
 /// blue contributes about a fourteenth of luminance, so a readable blue is a
 /// pale one. What is left leans green and teal, and the separation rule keeps
 /// them apart rather than the hues being spread evenly round the wheel.
-const NODE_COLOURS: [u8; 12] = [43, 47, 51, 74, 107, 118, 122, 150, 153, 182, 193, 213];
+///
+/// The floor was 155 and the list was twelve long, which brighter names cost
+/// two of. That is not a knob that was turned but the shape of the cube: with
+/// the warm hues spoken for by state, what is left bright enough to read runs
+/// from green round to violet, and it is a narrow arc that crowds towards white
+/// as it brightens. Twelve entries three steps apart top out at a floor of 163,
+/// which is not a brightness anyone would notice over 155; ten reach 185. The
+/// list is a hint for the eye and not an identifier — two nodes sharing a
+/// colour was always possible, and is now likelier by about a fifth — so the
+/// two were worth spending on names that can actually be read.
+const NODE_COLOURS: [u8; 10] = [47, 51, 85, 114, 117, 118, 158, 182, 192, 225];
 
 /// Green-to-red stops for the load ramp, as 24-bit RGB.
 ///
@@ -428,7 +437,7 @@ mod tests {
                 + 0.7152 * LEVEL[g as usize]
                 + 0.0722 * LEVEL[b as usize];
             assert!(
-                luminance >= 155.0,
+                luminance >= 185.0,
                 "colour {index} has luminance {luminance:.0}: too dim to read on black"
             );
         }
