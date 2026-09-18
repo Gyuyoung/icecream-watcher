@@ -119,29 +119,65 @@ pub fn span(secs: u64) -> String {
 
 /// Colours used to tell one node from another.
 ///
-/// Chosen by searching the 6×6×6 colour cube for twelve entries that are as far
-/// apart as possible under three constraints, rather than picked by eye:
+/// Searched for rather than picked by eye, under four constraints:
 ///
 /// * **no warm hues.** Red, orange, yellow and tan carry *state* in this UI — a
 ///   problem badge, a saturated metric, a hot sensor — and a healthy node that
-///   happened to hash into that range would read as a node in trouble.
-/// * **nothing too dark**, or the name vanishes on the screen's black. The
-///   first version of this list said so and did not hold to it: it contained
+///   happened to hash into that range would read as a node in trouble. This is
+///   the expensive one: it reserves half the wheel, leaving the 215° from
+///   yellow-green round to magenta for everything here.
+/// * **nothing too dark**, or the name vanishes on the screen's black. An early
+///   version of this list said so and did not hold to it: it contained
 ///   `(0, 95, 255)`, whose blue channel is at full while its luminance is 86,
 ///   and that node was reported as unreadable. The floor is on *luminance*,
 ///   because that is what "dark on black" means — a saturated blue can max a
-///   channel and still be dim. It is now 155, the highest the cube allows while
-///   still placing twelve colours three steps apart.
-/// * **no greys**, which already mean "no measurement".
+///   channel and still be dim. It is 155.
+/// * **no greys**, which already mean "no measurement": every entry keeps at
+///   least 60 between its strongest and weakest channel.
+/// * **spread round the wheel**, at least 10° of hue between any two.
 ///
-/// The first attempt at this list was picked by hand and paired 39 with 45 —
-/// one step apart in the cube, and the same colour to anyone glancing at a row.
+/// That last rule is the one this list spent a while without, and its absence
+/// is what made four nodes on one cluster read as the same green. The rule it
+/// replaces asked only that two entries be three steps apart in the 6×6×6
+/// cube, which counts lightness as distance: `(135,255,0)`, `(135,175,95)`,
+/// `(175,215,135)` and `(215,255,175)` all passed it comfortably, and all four
+/// are yellow-green to anyone glancing down a column of names. Eight of the
+/// twelve sat between 88° and 180°, and nothing at all sat between 210° and
+/// 300°. Hue distance is what "I can tell these apart" means for a word on a
+/// dark screen; cube distance was measuring the wrong thing.
 ///
-/// The floor costs the deep blues and violets, which are dark by construction:
-/// blue contributes about a fourteenth of luminance, so a readable blue is a
-/// pale one. What is left leans green and teal, and the separation rule keeps
-/// them apart rather than the hues being spread evenly round the wheel.
-const NODE_COLOURS: [u8; 12] = [43, 47, 51, 74, 107, 118, 122, 150, 153, 182, 193, 213];
+/// So the arc is divided into twelve 18° slices and each entry comes from the
+/// middle of its own slice, taking whatever lightness within it sits furthest
+/// from the entries already chosen. That drops the closest pair in RGB terms
+/// from about 120 to 43 — the price of the swap — while raising the closest
+/// pair in hue from 0° to 11°, and it leaves six of the twelve rather than
+/// eight in the green-to-cyan half.
+/// The order is not the order they were found in. Names on one cluster are
+/// rarely unrelated — `build01` to `build12`, or a `-desktop` and a
+/// `-desktop-2` — and near-identical names hash to near-identical values, which
+/// land on *neighbouring* slots. Listed by hue, neighbouring slots are
+/// neighbouring colours, and a cluster named that way comes out all one shade:
+/// four nodes on a real one drew hues 95°, 114°, 133° and 170°, every one of
+/// them a green, from a list that was properly spread.
+///
+/// So the twelve are laid out at a stride of five round the wheel, five being
+/// coprime with twelve and the stride that maximises the worst case. Adjacent
+/// slots are at least 82° apart, and those same four nodes now draw 95°, 188°,
+/// 234° and 272° — a green, a cyan, an indigo and an orchid.
+const NODE_COLOURS: [(u8, u8, u8); 12] = [
+    (0xa8, 0xff, 0x69), // yellow-green, hue  95
+    (0x05, 0xd5, 0xf7), // cyan,         hue 188
+    (0xb6, 0x8d, 0xd9), // orchid,       hue 272
+    (0x05, 0xff, 0x8c), // spring,       hue 152
+    (0x8d, 0x97, 0xf0), // indigo,       hue 234
+    (0x1b, 0xe8, 0x05), // green,        hue 114
+    (0x78, 0xa2, 0xc2), // slate,        hue 206
+    (0xf7, 0x78, 0xff), // magenta,      hue 296
+    (0x70, 0xff, 0xe8), // mint,         hue 170
+    (0xbf, 0x9e, 0xff), // violet,       hue 260
+    (0x4c, 0xba, 0x63), // moss,         hue 133
+    (0x9e, 0xc3, 0xff), // sky,          hue 217
+];
 
 /// Green-to-red stops for the load ramp, as 24-bit RGB.
 ///
@@ -256,18 +292,6 @@ pub fn heat(fraction: f32) -> Color {
     }
 }
 
-/// The RGB a cube index stands for, so a palette entry can be sent as colour
-/// rather than as a slot number.
-fn cube_colour(index: u8) -> (u8, u8, u8) {
-    const CHANNEL: [u8; 6] = [0, 95, 135, 175, 215, 255];
-    let n = index - 16;
-    (
-        CHANNEL[(n / 36) as usize],
-        CHANNEL[((n % 36) / 6) as usize],
-        CHANNEL[(n % 6) as usize],
-    )
-}
-
 /// A stable colour for a node, derived from its name.
 ///
 /// Keyed by name rather than by row so a node keeps its colour when the list is
@@ -277,18 +301,14 @@ fn cube_colour(index: u8) -> (u8, u8, u8) {
 /// With more nodes than colours, two will share one. This is a hint for the eye,
 /// not an identifier: the name is still the name.
 ///
-/// The palette is kept as cube indices, which is the space it was searched in
-/// and the space its rules are written in, but an index is not what is sent.
-/// It goes out through [`rgb`] like every other colour chosen by hand here.
-///
-/// These were the one exception, and were reported as reading all of a colour
-/// on a terminal with a customised palette. A cube index is not the fixed thing
-/// it looks like: the 240 slots above the basic 16 are as remappable as slots 0
-/// and 15 are, and a theme that repaints them is repainting this list. It is
-/// the same argument [`foreground`] and [`background`] already make about white
-/// and black, applied to the one list that had been left out of it. Where
-/// 24-bit colour is off the index comes back anyway, because [`rgb`] rounds to
-/// the cube and these are exactly cube colours — so nothing changes there.
+/// The colour goes out through [`rgb`], like every other colour chosen by hand
+/// here. The list used to be cube indices sent as `Color::Indexed`, and was
+/// reported as reading all of one hue on a terminal with a customised palette:
+/// a cube index is not the fixed thing it looks like, because the 240 slots
+/// above the basic 16 are as remappable as slots 0 and 15 are, and a theme that
+/// repaints them repaints this list. It is the argument [`foreground`] and
+/// [`background`] already make about white and black, applied to the one list
+/// that had been left out of it.
 pub fn node_colour(name: &str) -> Color {
     // FNV-1a. Small, and stable in a way `DefaultHasher` does not promise
     // across Rust versions — a colour that changed when the toolchain changed
@@ -298,8 +318,21 @@ pub fn node_colour(name: &str) -> Color {
         hash ^= u64::from(*byte);
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    let index = NODE_COLOURS[(hash % NODE_COLOURS.len() as u64) as usize];
-    let (r, g, b) = cube_colour(index);
+    // Fold the halves together before reducing. `hash % len` on its own reads
+    // only the low bits, which FNV-1a barely mixes — two names whose hashes
+    // differ by a multiple of the list length then share an entry however long
+    // the list is, and on one real cluster `gyuyoung-ThinkPad-P1` and
+    // `gyuyoung-desktop-2` did exactly that for 12, 16, 20 and 24 colours
+    // alike.
+    //
+    // The high bits alone are no better, and for these names they are worse.
+    // FNV's prime is 2^40 + 0x1b3, so a name differing in its last byte differs
+    // by about that byte times 2^40: the change lands around bit 40 and leaves
+    // the top twenty bits alone. Taking the top bits put all of `build01` to
+    // `build12` on one colour. Folding uses both ends and gives eight colours
+    // across those twelve names, against seven for the low bits alone.
+    let folded = hash ^ (hash >> 32);
+    let (r, g, b) = NODE_COLOURS[(folded % NODE_COLOURS.len() as u64) as usize];
     rgb(r, g, b)
 }
 
@@ -389,15 +422,30 @@ mod tests {
         assert_eq!(node_colour(""), node_colour(""));
     }
 
-    /// Decode a 256-colour cube index into its 0..5 red, green and blue levels.
-    fn cube_rgb(index: u8) -> (u8, u8, u8) {
-        assert!(
-            (16..232).contains(&index),
-            "colour {index} is outside the 6x6x6 cube: the basic 16 are\n\
-             theme-dependent and the greyscale ramp is not a hue"
+    /// Where a colour sits on the wheel, in degrees. Red is 0, green 120.
+    fn hue(colour: (u8, u8, u8)) -> f32 {
+        let (r, g, b) = (
+            f32::from(colour.0) / 255.0,
+            f32::from(colour.1) / 255.0,
+            f32::from(colour.2) / 255.0,
         );
-        let n = index - 16;
-        (n / 36, (n % 36) / 6, n % 6)
+        let max = r.max(g).max(b);
+        let span = max - r.min(g).min(b);
+        if span == 0.0 {
+            return 0.0; // grey has no hue; `no_node_colour_is_a_grey` rejects it
+        }
+        let h = if max == r {
+            ((g - b) / span).rem_euclid(6.0)
+        } else if max == g {
+            (b - r) / span + 2.0
+        } else {
+            (r - g) / span + 4.0
+        };
+        (h * 60.0).rem_euclid(360.0)
+    }
+
+    fn luminance(colour: (u8, u8, u8)) -> f32 {
+        0.2126 * f32::from(colour.0) + 0.7152 * f32::from(colour.1) + 0.0722 * f32::from(colour.2)
     }
 
     #[test]
@@ -406,59 +454,130 @@ mod tests {
         // saturated metric, a hot sensor. A healthy node that hashed into that
         // range would read as a node in trouble. Those hues are the ones with
         // almost no blue and plenty of red, so that is what is excluded rather
-        // than a hand-drawn list of indices.
-        for index in NODE_COLOURS {
-            let (r, g, b) = cube_rgb(index);
+        // than a hand-drawn list of colours.
+        for colour in NODE_COLOURS {
+            let (r, g, b) = colour;
             assert!(
                 r < g || r <= b,
-                "colour {index} is ({r},{g},{b}) — red-dominant, so it reads as a warning"
+                "{colour:?} is red-dominant, so it reads as a warning"
             );
             assert!(
-                b > 1 || r < 3 || g < 3,
-                "colour {index} is ({r},{g},{b}) — yellow enough to read as a warning"
-            );
-            assert!(
-                r.max(g).max(b) >= 3 && r + g + b >= 6,
-                "colour {index} is ({r},{g},{b}) — too dark to read on a dark terminal"
-            );
-            assert!(
-                !(r == g && g == b),
-                "colour {index} is grey, which already means \"no measurement\""
+                b >= 135 || r < 175 || g < 175,
+                "{colour:?} is yellow enough to read as a warning"
             );
         }
     }
 
     #[test]
-    fn the_node_palette_is_actually_distinguishable() {
-        // Two colours a few cube steps apart are the same colour to a reader
-        // glancing at a row.
+    fn no_node_colour_is_a_grey() {
+        // Grey already means "no measurement" on this screen.
+        for colour in NODE_COLOURS {
+            let (r, g, b) = colour;
+            let span = r.max(g).max(b) - r.min(g).min(b);
+            assert!(
+                span >= 60,
+                "{colour:?} spans only {span} between its channels, which reads as grey"
+            );
+        }
+    }
+
+    #[test]
+    fn the_node_palette_is_spread_round_the_wheel() {
+        // The rule this list spent a while without, and the reason four nodes on
+        // one cluster all read as the same green. Its predecessor asked only for
+        // three steps of cube distance, which counts lightness: (135,255,0),
+        // (135,175,95), (175,215,135) and (215,255,175) all passed, and all four
+        // are yellow-green to a reader glancing down a column of names.
         for (i, a) in NODE_COLOURS.iter().enumerate() {
             for b in &NODE_COLOURS[i + 1..] {
-                let (ar, ag, ab) = cube_rgb(*a);
-                let (br, bg, bb) = cube_rgb(*b);
-                let distance = ar.abs_diff(br) + ag.abs_diff(bg) + ab.abs_diff(bb);
-                assert!(distance >= 3, "{a} and {b} are too close to tell apart");
+                let gap = (hue(*a) - hue(*b)).abs();
+                let gap = gap.min(360.0 - gap);
+                assert!(
+                    gap >= 10.0,
+                    "{a:?} and {b:?} are {gap:.0}° apart: the same hue to a reader"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_node_palette_is_actually_distinguishable() {
+        // Hue carries the work now, but two entries of the same hue and nearly
+        // the same lightness would still be one colour, so the floor stays.
+        for (i, a) in NODE_COLOURS.iter().enumerate() {
+            for b in &NODE_COLOURS[i + 1..] {
+                let d = |x: u8, y: u8| (f32::from(x) - f32::from(y)).powi(2);
+                let distance = (d(a.0, b.0) + d(a.1, b.1) + d(a.2, b.2)).sqrt();
+                assert!(
+                    distance >= 40.0,
+                    "{a:?} and {b:?} are only {distance:.0} apart"
+                );
             }
         }
     }
 
     #[test]
     fn no_node_colour_is_dim_against_the_screen() {
-        // The rule the list has always claimed and did not keep: it held
-        // (0, 95, 255), whose blue channel is at full and whose luminance is
-        // 86, and the node wearing it was reported as unreadable. Brightest
-        // channel is not the test; luminance is.
-        const LEVEL: [f32; 6] = [0.0, 95.0, 135.0, 175.0, 215.0, 255.0];
-        for index in NODE_COLOURS {
-            let (r, g, b) = cube_rgb(index);
-            let luminance = 0.2126 * LEVEL[r as usize]
-                + 0.7152 * LEVEL[g as usize]
-                + 0.0722 * LEVEL[b as usize];
+        // The rule the list once claimed and did not keep: it held (0, 95, 255),
+        // whose blue channel is at full and whose luminance is 86, and the node
+        // wearing it was reported as unreadable. Brightest channel is not the
+        // test; luminance is.
+        for colour in NODE_COLOURS {
+            let l = luminance(colour);
             assert!(
-                luminance >= 155.0,
-                "colour {index} has luminance {luminance:.0}: too dim to read on black"
+                l >= 155.0,
+                "{colour:?} has luminance {l:.0}: too dim to read on black"
             );
         }
+    }
+
+    #[test]
+    fn neighbouring_slots_are_not_neighbouring_colours() {
+        // Names on one cluster are rarely unrelated, and near-identical names
+        // hash to near-identical values, which land on neighbouring slots. A
+        // list in hue order therefore hands a uniformly-named cluster one shade:
+        // four nodes on a real one drew 95°, 114°, 133° and 170°, all green.
+        for (i, a) in NODE_COLOURS.iter().enumerate() {
+            let b = &NODE_COLOURS[(i + 1) % NODE_COLOURS.len()];
+            let gap = (hue(*a) - hue(*b)).abs();
+            let gap = gap.min(360.0 - gap);
+            assert!(
+                gap >= 60.0,
+                "slots {i} and {} are {gap:.0}° apart: too close for two names \
+                 that differ by a character",
+                (i + 1) % NODE_COLOURS.len()
+            );
+        }
+    }
+
+    #[test]
+    fn a_uniformly_named_cluster_does_not_come_out_one_colour() {
+        // The four names from the cluster that reported this.
+        let names = [
+            "Gyuyoung-MacBook-Pro.local",
+            "gyuyoung-ThinkPad-P1",
+            "gyuyoung-desktop",
+            "gyuyoung-desktop-2",
+        ];
+        let seen: std::collections::BTreeSet<String> = names
+            .iter()
+            .map(|n| format!("{:?}", node_colour(n)))
+            .collect();
+        assert_eq!(seen.len(), names.len(), "two of {names:?} share a colour");
+    }
+
+    #[test]
+    fn two_names_whose_hashes_differ_by_a_multiple_of_the_palette_still_differ() {
+        // FNV-1a's last act is a multiply, so its low bits are barely mixed and
+        // `hash % len` collides for any two names whose hashes differ by a
+        // multiple of `len`. These two are from a real four-node cluster, where
+        // they shared a colour for 12, 16, 20 and 24 palette entries alike, and
+        // the fix was to reduce from the high bits instead.
+        assert_ne!(
+            node_colour("gyuyoung-ThinkPad-P1"),
+            node_colour("gyuyoung-desktop-2"),
+            "these two collided under `hash % len`"
+        );
     }
 
     #[test]
