@@ -9,6 +9,14 @@ navigation, a per-node detail view, and failure handling that keeps the screen
 honest when the cluster or the network misbehaves. See
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the roadmap.
 
+![icecream-watcher against a seven-node cluster](docs/demo.gif)
+
+That is the binary itself, replaying a captured scheduler stream: seven nodes
+fill up, saturate, drain, and one of them opens its detail view. Nothing in it
+is drawn by hand — see [contrib/demo/](contrib/demo/) to rebuild it.
+
+The same screen as text, which the rest of this section reads through:
+
 ```
 icecream-watcher  Scheduler: build-master:8765  NetName: ICECREAM  proto 43  up 00:00:00   sort name   [?] help
 ┌ ICECREAM CLUSTER ──────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -322,8 +330,11 @@ likely to be useful to other tools.
 cargo test
 ```
 
-The screenshot above is real output from the renderer, not a mock-up; regenerate
-it with `cargo test -p icecream-watcher screenshot -- --ignored --nocapture`.
+The text screenshot above is real output from the renderer, not a mock-up;
+regenerate it with
+`cargo test -p icecream-watcher screenshot -- --ignored --nocapture`. The GIF is
+the binary running, rebuilt with `contrib/demo/record.sh`; see
+[contrib/demo/README.md](contrib/demo/README.md) for what that needs.
 
 Protocol tests run against bytes captured from a real scheduler
 (`contrib/capture/`), so they need no cluster — see

@@ -35,6 +35,11 @@ truncation point is survivable.
 | File | Recorded against | Contents |
 |---|---|---|
 | `lab-session.icwcap` | `icecc-scheduler` 1.4, protocol 43, one `iceccd`, isolated netname `ICWLAB` on port 18765 | login replay, then two live stats updates captured while CPU load was applied and released |
+| `demo-cluster.icwcap` | nothing — written by `contrib/demo/make-capture.py` | seven nodes, one offline and one local-only, filling and draining over 15 s. Drives the README GIF |
+
+`demo-cluster.icwcap` is synthetic on purpose: a real cluster cannot be asked
+to do the same thing twice, and the GIF has to be rebuildable. It is not a
+protocol fixture and nothing tests against it.
 
 `lab-session.icwcap` is the fixture behind
 `crates/icecc-proto/tests/golden.rs`. It is small on purpose and shows the two
