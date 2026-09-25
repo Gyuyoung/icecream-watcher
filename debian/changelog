@@ -1,0 +1,5 @@
+icecream-watcher (0.1.0-1) UNRELEASED; urgency=medium
+
+  * First package, for the Launchpad PPA.
+
+ -- Gyuyoung Kim <gyuyoung@igalia.com>  Thu, 24 Sep 2026 21:19:00 +0900

@@ -1,0 +1,25 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: icecream-watcher
+Upstream-Contact: Gyuyoung Kim <gyuyoung@igalia.com>
+Source: https://github.com/Gyuyoung/icecream-watcher
+
+Files: *
+Copyright: 2026 Gyuyoung Kim <gyuyoung@igalia.com>
+License: GPL-2+
+
+Files: vendor/*
+Copyright: the authors of each crate, as listed in vendor/*/Cargo.toml
+License: various
+ The orig tarball bundles the Rust crates the build needs, since the
+ builders have no network. Each keeps its own licence file under
+ vendor/<crate>/; all are permissive (MIT, Apache-2.0, Unlicense, Zlib
+ or similar) and compatible with GPL-2+.
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 2 can be found in "/usr/share/common-licenses/GPL-2".

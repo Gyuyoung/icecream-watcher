@@ -1,0 +1,22 @@
+Source: icecream-watcher
+Section: devel
+Priority: optional
+Maintainer: Gyuyoung Kim <gyuyoung@igalia.com>
+Build-Depends: debhelper-compat (= 13), cargo-1.89, rustc-1.89
+Standards-Version: 4.6.2
+Homepage: https://github.com/Gyuyoung/icecream-watcher
+Vcs-Browser: https://github.com/Gyuyoung/icecream-watcher
+Vcs-Git: https://github.com/Gyuyoung/icecream-watcher.git
+Rules-Requires-Root: no
+
+Package: icecream-watcher
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: icecc
+Description: terminal monitor for Icecream distributed compile clusters
+ icecream-watcher shows an Icecream (icecc) build farm in the terminal, in
+ the manner of btop: each build node reads like a process, with its load,
+ running jobs and throughput.
+ .
+ It needs nothing installed on the build nodes; it opens one TCP connection
+ to the scheduler, found by the same discovery rules icecc itself uses.

@@ -9,9 +9,21 @@ build node reads like a process.
 Nothing on the build nodes to install: it is one TCP connection to the
 scheduler.
 
+## Install
+
+On Ubuntu 24.04 (noble), from the PPA:
+
+```sh
+sudo add-apt-repository ppa:gyuyoung-kim/icecream-watcher
+sudo apt update
+sudo apt install icecream-watcher
+```
+
+Anywhere else, build it from source.
+
 ## Build
 
-Needs a Rust toolchain (1.75+). No `libicecc` and no C++ build dependencies —
+Needs a Rust toolchain (1.88+). No `libicecc` and no C++ build dependencies —
 the scheduler protocol is implemented natively.
 
 ```sh

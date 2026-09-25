@@ -1,0 +1,41 @@
+#!/usr/bin/make -f
+
+# Launchpad builders have no network, so every crate comes from vendor/,
+# which packaging/ppa/build-source.sh puts in the orig tarball. The
+# lockfile needs a newer Rust than noble's default rustc, so build with
+# the versioned toolchain from noble-updates.
+export PATH := /usr/lib/rust-1.89/bin:$(PATH)
+export CARGO_HOME := $(CURDIR)/debian/cargo-home
+
+CARGO := cargo --offline --locked \
+	--config 'source.crates-io.replace-with="vendored-sources"' \
+	--config 'source.vendored-sources.directory="vendor"'
+
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+CARGO_JOBS := -j $(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+endif
+
+%:
+	dh $@
+
+override_dh_auto_clean:
+	rm -rf target debian/cargo-home
+
+# dh_clean deletes *.orig as editor leftovers, but every vendored crate
+# ships a Cargo.toml.orig that its .cargo-checksum.json vouches for.
+override_dh_clean:
+	dh_clean -XCargo.toml.orig
+
+override_dh_auto_configure:
+
+override_dh_auto_build:
+	$(CARGO) build --release $(CARGO_JOBS) -p icecream-watcher
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	$(CARGO) test --release $(CARGO_JOBS) --workspace
+endif
+
+override_dh_auto_install:
+	install -D -m 0755 target/release/icecream-watcher \
+		debian/icecream-watcher/usr/bin/icecream-watcher
